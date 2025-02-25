@@ -49,7 +49,7 @@ static int record_flag = 0;
 static int play_flag = 0;
 static int pause_flag = 0;
 
-u32 delay_us = 60;
+u32 delay_us = 530;
 
 //----------------------------------------------------
 // PROTOTYPE FUNCTIONS
@@ -193,6 +193,50 @@ void menu() {
     }
 }
 
+// int main(void) {
+//	init_platform();
+//	COMM_VAL = 0;
+//
+//	//Disable cache on OCM
+//	// S=b1 TEX=b100 AP=b11, Domain=b1111, C=b0, B=b0
+//	Xil_SetTlbAttributes(0xFFFF0000,0x14de2);
+//
+//	print("ARM0: writing startaddress for ARM1\n\r");
+//	Xil_Out32(ARM1_STARTADR, ARM1_BASEADDR);
+//	dmb(); //waits until write has finished
+//
+//	print("ARM0: sending the SEV to wake up ARM1\n\r");
+//	sev();
+//
+//
+//    int status;
+//
+//    status = XGpio_Initialize(&BTNInst, BTNS_DEVICE_ID);
+//    if (status != XST_SUCCESS) return XST_FAILURE;
+//
+//    XGpio_SetDataDirection(&BTNInst, 1, 0xFF);
+//
+//    status = IntcInitFunction(INTC_DEVICE_ID, &BTNInst);
+//    if (status != XST_SUCCESS) return XST_FAILURE;
+//
+//    xil_printf("Initializing audio system...\r\n");
+//    IicConfig(XPAR_XIICPS_0_DEVICE_ID);
+//    AudioPllConfig();
+//    AudioConfigureJacks();
+//    xil_printf("Audio system ready.\r\n");
+//
+//    // read into memory the left and right data
+//    int * audio_buffer_pointer = (int *)0x00900000;
+//    int * audio_sample_1 = (int *)0x018D2008;
+//    memcpy(audio_buffer_pointer, audio_sample_1, NUM_BYTES_BUFFER);
+//
+//    xil_printf("Samples saved to memory.\r\n");
+//
+//    menu();
+//    return 0;
+//}
+
+
 int main()
 {
     init_platform();
@@ -202,7 +246,7 @@ int main()
     // S=b1 TEX=b100 AP=b11, Domain=b1111, C=b0, B=b0
     Xil_SetTlbAttributes(0xFFFF0000,0x14de2);
 
-    print("ARM0: writing startaddress for ARM1\n\r");
+    xil_printf("ARM0: writing startaddress for ARM1\n\r");
     Xil_Out32(ARM1_STARTADR, ARM1_BASEADDR);
     dmb(); //waits until write has finished
 
@@ -224,6 +268,37 @@ int main()
 	AudioPllConfig();
 	AudioConfigureJacks();
 	xil_printf("Audio system ready.\r\n");
+
+	// read into memory
+	int * audio_sample_1 = (int *)0x018D2008;
+
+
+	int i = 0;
+	int NUM_SAMPLES = 791552;//(NUM_BYTES_BUFFER / sizeof(int));  // Total number of int samples
+
+	while (1) {
+		while (paused) {
+			// Stay in this loop until unpaused
+			usleep(500);  // Prevent CPU overuse
+		}
+
+
+		Xil_Out32(I2S_DATA_TX_L_REG, audio_sample_1[i]*100);  // Send left channel
+		Xil_Out32(I2S_DATA_TX_R_REG, audio_sample_1[i]*100);  // Send right channel
+
+		i++; // Move to the next left sample for the next iteration
+
+		for(int j=0;j<delay_us;j++){
+			asm("NOP");
+		}
+
+		if (i >= NUM_SAMPLES) {
+			xil_printf("Looping\n");
+			i = 0;  // Reset index to loop through samples
+		}
+	}
+
+	xil_printf("Samples saved to memory.\r\n");
 
 	menu();
 
