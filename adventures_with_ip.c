@@ -1,12 +1,24 @@
 #include "adventures_with_ip.h"
+#include <stdio.h>
+#include <sleep.h>
+#include "xil_io.h"
+#include "xil_mmu.h"
+#include "platform.h"
+#include "xil_printf.h"
+#include "xpseudo_asm.h"
+#include "xil_exception.h"
+
+#define sev() __asm__("sev")
+#define ARM1_STARTADR 0xFFFFFFF0
+#define ARM1_BASEADDR 0x10080000
+#define COMM_VAL (*(volatile unsigned long *)(0xFFFF0000))
 
 // Need to make super long to work for some reason
 // So the "record seconds" and playback time isn't fully accurate
 #define SAMPLES_PER_SECOND 48000
 #define RECORD_SECONDS 35
-#define MAX_SAMPLES (SAMPLES_PER_SECOND * RECORD_SECONDS * 28)
-//int NUM_BYTES_BUFFER = 5242880;
-int NUM_BYTES_BUFFER = MAX_SAMPLES * 2 * 2;
+#define MAX_SAMPLES (SAMPLES_PER_SECOND * RECORD_SECONDS * 15)
+int NUM_BYTES_BUFFER = 5242880;
 
 #include "xscugic.h"
 #include "xil_exception.h"
@@ -37,7 +49,7 @@ static int record_flag = 0;
 static int play_flag = 0;
 static int pause_flag = 0;
 
-u32 delay_us = 1760;
+u32 delay_us = 530;
 
 //----------------------------------------------------
 // PROTOTYPE FUNCTIONS
@@ -65,19 +77,19 @@ void BTN_Intr_Handler(void *InstancePtr) {
     } else if (btn_value == 16) {
         //paused = !paused;  // Toggle paused directly
         //xil_printf("Audio %s.\r\n", paused ? "Paused" : "Resumed");
-        delay_us = delay_us + 10;
+        delay_us = delay_us + 1;
 
         xil_printf("Delay (us): %d", delay_us);
     } else if(btn_value == 2){
     	if (delay_us > 1){
-    		delay_us = delay_us - 10;
+    		delay_us = delay_us - 1;
     	}
 
         xil_printf("Delay (us): %d", delay_us);
 
-    } else if(btn_value == 1){
-    	paused = !paused;  // Toggle paused directly
-		xil_printf("Audio %s.\r\n", paused ? "Paused" : "Resumed");
+    } else if (btn_value == 1){
+    	// center button
+    	COMM_VAL = 1;
     }
 
     (void)XGpio_InterruptClear(&BTNInst, BTN_INT);
@@ -181,52 +193,115 @@ void menu() {
     }
 }
 
-int main(void) {
+// int main(void) {
+//	init_platform();
+//	COMM_VAL = 0;
+//
+//	//Disable cache on OCM
+//	// S=b1 TEX=b100 AP=b11, Domain=b1111, C=b0, B=b0
+//	Xil_SetTlbAttributes(0xFFFF0000,0x14de2);
+//
+//	print("ARM0: writing startaddress for ARM1\n\r");
+//	Xil_Out32(ARM1_STARTADR, ARM1_BASEADDR);
+//	dmb(); //waits until write has finished
+//
+//	print("ARM0: sending the SEV to wake up ARM1\n\r");
+//	sev();
+//
+//
+//    int status;
+//
+//    status = XGpio_Initialize(&BTNInst, BTNS_DEVICE_ID);
+//    if (status != XST_SUCCESS) return XST_FAILURE;
+//
+//    XGpio_SetDataDirection(&BTNInst, 1, 0xFF);
+//
+//    status = IntcInitFunction(INTC_DEVICE_ID, &BTNInst);
+//    if (status != XST_SUCCESS) return XST_FAILURE;
+//
+//    xil_printf("Initializing audio system...\r\n");
+//    IicConfig(XPAR_XIICPS_0_DEVICE_ID);
+//    AudioPllConfig();
+//    AudioConfigureJacks();
+//    xil_printf("Audio system ready.\r\n");
+//
+//    // read into memory the left and right data
+//    int * audio_buffer_pointer = (int *)0x00900000;
+//    int * audio_sample_1 = (int *)0x018D2008;
+//    memcpy(audio_buffer_pointer, audio_sample_1, NUM_BYTES_BUFFER);
+//
+//    xil_printf("Samples saved to memory.\r\n");
+//
+//    menu();
+//    return 0;
+//}
+
+
+int main()
+{
+    init_platform();
+    COMM_VAL = 0;
+
+    //Disable cache on OCM
+    // S=b1 TEX=b100 AP=b11, Domain=b1111, C=b0, B=b0
+    Xil_SetTlbAttributes(0xFFFF0000,0x14de2);
+
+    xil_printf("ARM0: writing startaddress for ARM1\n\r");
+    Xil_Out32(ARM1_STARTADR, ARM1_BASEADDR);
+    dmb(); //waits until write has finished
+
+    print("ARM0: sending the SEV to wake up ARM1\n\r");
+    sev();
+
     int status;
 
-    status = XGpio_Initialize(&BTNInst, BTNS_DEVICE_ID);
-    if (status != XST_SUCCESS) return XST_FAILURE;
+	status = XGpio_Initialize(&BTNInst, BTNS_DEVICE_ID);
+	if (status != XST_SUCCESS) return XST_FAILURE;
 
-    XGpio_SetDataDirection(&BTNInst, 1, 0xFF);
+	XGpio_SetDataDirection(&BTNInst, 1, 0xFF);
 
-    status = IntcInitFunction(INTC_DEVICE_ID, &BTNInst);
-    if (status != XST_SUCCESS) return XST_FAILURE;
+	status = IntcInitFunction(INTC_DEVICE_ID, &BTNInst);
+	if (status != XST_SUCCESS) return XST_FAILURE;
 
-    xil_printf("Initializing audio system...\r\n");
-    IicConfig(XPAR_XIICPS_0_DEVICE_ID);
-    AudioPllConfig();
-    AudioConfigureJacks();
-    xil_printf("Audio system ready.\r\n");
+	xil_printf("Initializing audio system...\r\n");
+	IicConfig(XPAR_XIICPS_0_DEVICE_ID);
+	AudioPllConfig();
+	AudioConfigureJacks();
+	xil_printf("Audio system ready.\r\n");
 
-    // read into memory
-    int * audio_sample_1 = (int *)0x018D2008;
+	// read into memory
+	int * audio_sample_1 = (int *)0x018D2008;
 
-    int i = 0;
-    int NUM_SAMPLES = 791552;//(NUM_BYTES_BUFFER / sizeof(int));  // Total number of int samples
 
-    while (1) {
-        while (paused) {
-            // Stay in this loop until unpaused
-            usleep(500);  // Prevent CPU overuse
-        }
+	int i = 0;
+	int NUM_SAMPLES = 791552;//(NUM_BYTES_BUFFER / sizeof(int));  // Total number of int samples
 
-        Xil_Out32(I2S_DATA_TX_L_REG, audio_sample_1[i]*100);  // Send left channel
-        Xil_Out32(I2S_DATA_TX_R_REG, audio_sample_1[i]*100);  // Send right channel
+	while (1) {
+		while (paused) {
+			// Stay in this loop until unpaused
+			usleep(500);  // Prevent CPU overuse
+		}
 
-        i++; // Move to the next left sample for the next iteration
 
-        for(int j=0;j<delay_us;j++){
-        	asm("NOP");
-        }
+		Xil_Out32(I2S_DATA_TX_L_REG, audio_sample_1[i]*100);  // Send left channel
+		Xil_Out32(I2S_DATA_TX_R_REG, audio_sample_1[i]*100);  // Send right channel
 
-        if (i >= NUM_SAMPLES) {
-            xil_printf("Looping\n");
-            i = 0;  // Reset index to loop through samples
-        }
-    }
+		i++; // Move to the next left sample for the next iteration
 
-    xil_printf("Samples saved to memory.\r\n");
+		for(int j=0;j<delay_us;j++){
+			asm("NOP");
+		}
 
-    menu();
+		if (i >= NUM_SAMPLES) {
+			xil_printf("Looping\n");
+			i = 0;  // Reset index to loop through samples
+		}
+	}
+
+	xil_printf("Samples saved to memory.\r\n");
+
+	menu();
+
+    cleanup_platform();
     return 0;
 }
