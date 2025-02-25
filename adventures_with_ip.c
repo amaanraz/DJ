@@ -193,50 +193,6 @@ void menu() {
     }
 }
 
-// int main(void) {
-//	init_platform();
-//	COMM_VAL = 0;
-//
-//	//Disable cache on OCM
-//	// S=b1 TEX=b100 AP=b11, Domain=b1111, C=b0, B=b0
-//	Xil_SetTlbAttributes(0xFFFF0000,0x14de2);
-//
-//	print("ARM0: writing startaddress for ARM1\n\r");
-//	Xil_Out32(ARM1_STARTADR, ARM1_BASEADDR);
-//	dmb(); //waits until write has finished
-//
-//	print("ARM0: sending the SEV to wake up ARM1\n\r");
-//	sev();
-//
-//
-//    int status;
-//
-//    status = XGpio_Initialize(&BTNInst, BTNS_DEVICE_ID);
-//    if (status != XST_SUCCESS) return XST_FAILURE;
-//
-//    XGpio_SetDataDirection(&BTNInst, 1, 0xFF);
-//
-//    status = IntcInitFunction(INTC_DEVICE_ID, &BTNInst);
-//    if (status != XST_SUCCESS) return XST_FAILURE;
-//
-//    xil_printf("Initializing audio system...\r\n");
-//    IicConfig(XPAR_XIICPS_0_DEVICE_ID);
-//    AudioPllConfig();
-//    AudioConfigureJacks();
-//    xil_printf("Audio system ready.\r\n");
-//
-//    // read into memory the left and right data
-//    int * audio_buffer_pointer = (int *)0x00900000;
-//    int * audio_sample_1 = (int *)0x018D2008;
-//    memcpy(audio_buffer_pointer, audio_sample_1, NUM_BYTES_BUFFER);
-//
-//    xil_printf("Samples saved to memory.\r\n");
-//
-//    menu();
-//    return 0;
-//}
-
-
 int main()
 {
     init_platform();
@@ -269,13 +225,6 @@ int main()
 	AudioConfigureJacks();
 	xil_printf("Audio system ready.\r\n");
 
-//    while(1){
-//        print("Hello World - ARM0\n\r");
-//        sleep(1);
-//        COMM_VAL = 1;
-//        while(COMM_VAL == 1){
-//        }
-//    }
 	menu();
 
     cleanup_platform();
