@@ -21,6 +21,7 @@
 #define RECORD_SECONDS 35
 #define MAX_SAMPLES (SAMPLES_PER_SECOND * RECORD_SECONDS * 15)
 int NUM_BYTES_BUFFER = 5242880;
+int j = 0; // for drum reset
 
 #include "xscugic.h"
 #include "xil_exception.h"
@@ -84,6 +85,7 @@ void BTN_Intr_Handler(void *InstancePtr) {
 
     	// Drum sounds
     	drum_flag = 1;
+    	j=0;
     } else if (btn_value == 4) {
         play_flag = 1;
     } else if (btn_value == 16) {
@@ -159,7 +161,7 @@ void record_audio() {
 void play_audio() {
     xil_printf("Playing sample from memory...\r\n");
     playing = 1;
-    int i = 0, j = 0;
+    int i = 0;
     int * song = (int *)0x018D2008;
     int * drum = (int *)0x020BB00C;
     int NUM_SAMPLES = 1755840;
@@ -173,19 +175,19 @@ void play_audio() {
 
         // Milestone 2 stuff: Add drum sound here inside if statement
         // Then add drum effects at that point to the song indices
-        int audio_sample = song[i]*100;
+        int audio_sample = song[i]*5;
 
-        // if (drum_flag && j < NUM_SAMPLES_DRUM) {
-        //   audio_sample += drum[j] * 100;  // Simple addition mixing
-        //	 j++;  // Move drum sample forward
-        // }
+        if (drum_flag && j < NUM_SAMPLES_DRUM) {
+           audio_sample += drum[j] * 150;  // Simple addition mixing
+        	 j++;  // Move drum sample forward
+         }
 
         // TEST: Playing song on top of itself instead of button sound
         // WORKS!!
-        if (drum_flag && j < NUM_SAMPLES) {
-			audio_sample += song[j] * 100;  // Simple addition mixing
-			j++;  // Move drum sample forward
-		}
+//        if (drum_flag && j < NUM_SAMPLES) {
+//			audio_sample += song[j] * 100;  // Simple addition mixing
+//			j++;  // Move drum sample forward
+//		}
 
         Xil_Out32(I2S_DATA_TX_L_REG, audio_sample);  // Send left channel
         Xil_Out32(I2S_DATA_TX_R_REG, audio_sample);  // Send right channel
@@ -205,7 +207,8 @@ void play_audio() {
 		}
 
 		// Stop drum playback if it ends
-		if (j >= NUM_SAMPLES/*NUM_SAMPLES_DRUM*/) {
+		// Can prob get rid of dis
+		if (j >= NUM_SAMPLES_DRUM) {
 			drum_flag = 0;
 			j=0;
 		}
