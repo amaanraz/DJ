@@ -39,7 +39,7 @@ int NUM_BYTES_BUFFER = 5242880;
 XGpio LEDInst, BTNInst;
 XScuGic INTCInst;
 
-//static int led_data;
+// static int led_data;
 static int btn_value;
 
 // Stereo buffer
@@ -74,16 +74,15 @@ void BTN_Intr_Handler(void *InstancePtr) {
     }
 
     btn_value = XGpio_DiscreteRead(&BTNInst, 1);
-    // need to add switches so buttons can do more than 5 things hehe
     if (btn_value == 8) {
-    	// recording functionality
-        //record_flag = 1;
+    	// Recording functionality
+        // record_flag = 1;
 
-    	// play/pause functionality
-		//paused = !paused;  // Toggle paused directly
-		//xil_printf("Audio %s.\r\n", paused ? "Paused" : "Resumed");
+    	// Play/pause functionality
+		// paused = !paused;  // Toggle paused directly
+		// xil_printf("Audio %s.\r\n", paused ? "Paused" : "Resumed");
 
-    	// drum sounds
+    	// Drum sounds
     	drum_flag = 1;
     } else if (btn_value == 4) {
         play_flag = 1;
@@ -96,7 +95,7 @@ void BTN_Intr_Handler(void *InstancePtr) {
     	}
         xil_printf("Delay (us): %d", delay_us);
     } else if (btn_value == 1){
-    	// center button
+    	// Center button
     	COMM_VAL = 1;
     }
 
@@ -160,9 +159,11 @@ void record_audio() {
 void play_audio() {
     xil_printf("Playing sample from memory...\r\n");
     playing = 1;
-    int i = 0;
+    int i = 0, j = 0;
     int * song = (int *)0x018D2008;
+    int * drum = (int *)0x020BB00C;
     int NUM_SAMPLES = 1755840;
+    int NUM_SAMPLES_DRUM = 26880;
 
     while (playing) {
         while (paused) {
@@ -170,29 +171,48 @@ void play_audio() {
             usleep(500);  // Prevent CPU overuse
         }
 
-        // call play drum here inside if statement?
-        // basically make an if statement, so if drum flag = 1 then
-        // add drum effects at that point to the song indices
+        // Milestone 2 stuff: Add drum sound here inside if statement
+        // Then add drum effects at that point to the song indices
+        int audio_sample = song[i]*100;
 
-        Xil_Out32(I2S_DATA_TX_L_REG, song[i]*100);  // Send left channel
-        Xil_Out32(I2S_DATA_TX_R_REG, song[i]*100);  // Send right channel
+        // if (drum_flag && j < NUM_SAMPLES_DRUM) {
+        //   audio_sample += drum[j] * 100;  // Simple addition mixing
+        //	 j++;  // Move drum sample forward
+        // }
+
+        // TEST: Playing song on top of itself instead of button sound
+        // WORKS!!
+        if (drum_flag && j < NUM_SAMPLES) {
+			audio_sample += song[j] * 100;  // Simple addition mixing
+			j++;  // Move drum sample forward
+		}
+
+        Xil_Out32(I2S_DATA_TX_L_REG, audio_sample);  // Send left channel
+        Xil_Out32(I2S_DATA_TX_R_REG, audio_sample);  // Send right channel
 
         i++; // Move to the next left sample for the next iteration
 
-		for(int j=0;j<delay_us;j++){
+		for(int d=0;d<delay_us;d++){
 			asm("NOP");
 		}
 
 		if (i >= NUM_SAMPLES) {
-			// to loop
- 			//xil_printf("Looping\n");
- 			//i = 0;  // Reset index to loop through samples
-			// to exit
+			// To loop
+ 			// xil_printf("Looping\n");
+ 			// i = 0;  // Reset index to loop through samples
+			// To exit
 			playing = 0;
+		}
+
+		// Stop drum playback if it ends
+		if (j >= NUM_SAMPLES/*NUM_SAMPLES_DRUM*/) {
+			drum_flag = 0;
+			j=0;
 		}
     }
     xil_printf("Playback stopped.\r\n");
     play_flag = 0;
+    drum_flag = 0;
 }
 
 void play_drum() {
@@ -249,13 +269,13 @@ int main()
     init_platform();
     COMM_VAL = 0;
 
-    //Disable cache on OCM
+    // Disable cache on OCM
     // S=b1 TEX=b100 AP=b11, Domain=b1111, C=b0, B=b0
     Xil_SetTlbAttributes(0xFFFF0000,0x14de2);
 
     xil_printf("ARM0: writing startaddress for ARM1\n\r");
     Xil_Out32(ARM1_STARTADR, ARM1_BASEADDR);
-    dmb(); //waits until write has finished
+    dmb(); // Waits until write has finished
 
     print("ARM0: sending the SEV to wake up ARM1\n\r");
     sev();
