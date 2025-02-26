@@ -37,13 +37,13 @@ def read_wav_file(wav_file):
             # print(sample_values)  # Output the sample values
 
 # Example usage
-wav_file = 'clap.wav'  # Replace with your WAV file path
+wav_file = 'bassdrop.wav'  # Replace with your WAV file path
 read_wav_file(wav_file)
 
 
 print("len is ",len(left_list))
-left_file_path = 'left_list_clap.data'
-right_file_path = 'right_list_clap.data'
+left_file_path = 'left_list_bassdrop.data'
+right_file_path = 'right_list_bassdrop.data'
 
 # Writing the lists to binary files
 with open(left_file_path, 'wb') as left_file:
