@@ -12,8 +12,11 @@
 #define ARM1_STARTADR 0xFFFFFFF0
 #define ARM1_BASEADDR 0x10080000
 #define COMM_VAL (*(volatile unsigned long *)(0xFFFF0000))
+#define AUDIO_SAMPLE_CURRENT_MOMENT (*(volatile unsigned long *)(0xFFFF0001))
 // dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list.data 0x018D2008
 // dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list_drum.data 0x020BB00C
+// dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list_snare.data 0x028A4010
+// dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list_clap.data 0x0308D014
 
 // Need to make super long to work for some reason
 // So the "record seconds" and playback time isn't fully accurate
@@ -53,8 +56,21 @@ static int record_flag = 0;
 static int play_flag = 0;
 static int pause_flag = 0;
 static int drum_flag = 0;
+static int snare_flag = 0;
+static int clap_flag = 0;
 
 u32 delay_us = 476;
+
+// access in the core possibly
+int * song = (int *)0x018D2008;
+int NUM_SAMPLES = 1755840;
+int * drum = (int *)0x020BB00C;
+int NUM_SAMPLES_DRUM = 26880;
+int * snare = (int *)0x028A4010;
+int NUM_SAMPLES_SNARE = 32256;
+int * clap = (int *)0x0308D014;
+int NUM_SAMPLES_CLAP = 35712;
+
 // u32 delay_us_drum = 60;
 
 //----------------------------------------------------
@@ -83,8 +99,10 @@ void BTN_Intr_Handler(void *InstancePtr) {
 		// paused = !paused;  // Toggle paused directly
 		// xil_printf("Audio %s.\r\n", paused ? "Paused" : "Resumed");
 
-    	// Drum sounds
-    	drum_flag = 1;
+    	// Sound testing - have in separate buttons later once switches work
+    	//drum_flag = 1;
+    	snare_flag = 1;
+    	//clap_flag = 1;
     	j=0;
     } else if (btn_value == 4) {
         play_flag = 1;
@@ -98,7 +116,8 @@ void BTN_Intr_Handler(void *InstancePtr) {
         xil_printf("Delay (us): %d", delay_us);
     } else if (btn_value == 1){
     	// Center button
-    	COMM_VAL = 1;
+    	//COMM_VAL = 1;
+    	clap_flag=1
     }
 
     (void)XGpio_InterruptClear(&BTNInst, BTN_INT);
@@ -162,10 +181,6 @@ void play_audio() {
     xil_printf("Playing sample from memory...\r\n");
     playing = 1;
     int i = 0;
-    int * song = (int *)0x018D2008;
-    int * drum = (int *)0x020BB00C;
-    int NUM_SAMPLES = 1755840;
-    int NUM_SAMPLES_DRUM = 26880;
 
     while (playing) {
         while (paused) {
@@ -181,14 +196,17 @@ void play_audio() {
            audio_sample += drum[j] * 150;  // Simple addition mixing
         	 j++;  // Move drum sample forward
          }
+        if (snare_flag && j < NUM_SAMPLES_SNARE) {
+			audio_sample += snare[j] * 100;  // Simple addition mixing
+			j++;  // Move drum sample forward
+		}
+        if (clap_flag && j < NUM_SAMPLES_CLAP) {
+			audio_sample += clap[j] * 100;  // Simple addition mixing
+			j++;  // Move drum sample forward
+		}
 
-        // TEST: Playing song on top of itself instead of button sound
-        // WORKS!!
-//        if (drum_flag && j < NUM_SAMPLES) {
-//			audio_sample += song[j] * 100;  // Simple addition mixing
-//			j++;  // Move drum sample forward
-//		}
-
+        // write to the global thing for like dual core connection
+        AUDIO_SAMPLE_CURRENT_MOMENT = audio_sample;
         Xil_Out32(I2S_DATA_TX_L_REG, audio_sample);  // Send left channel
         Xil_Out32(I2S_DATA_TX_R_REG, audio_sample);  // Send right channel
 
@@ -216,14 +234,15 @@ void play_audio() {
     xil_printf("Playback stopped.\r\n");
     play_flag = 0;
     drum_flag = 0;
+    snare_flag = 0;
+    clap_flag = 0;
 }
 
 void play_drum() {
 	xil_printf("Playing drum sample from memory...\r\n");
 	playing_drum = 1;
 	int i = 0;
-	int * drum = (int *)0x020BB00C;
-	int NUM_SAMPLES_DRUM = 26880;
+
 
 	while (playing_drum) {
 		while (paused) {
