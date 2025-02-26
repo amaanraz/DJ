@@ -13,6 +13,7 @@
 #define ARM1_BASEADDR 0x10080000
 #define COMM_VAL (*(volatile unsigned long *)(0xFFFF0000))
 // dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list.data 0x018D2008
+// dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list_drum.data 0x020BB00C
 
 // Need to make super long to work for some reason
 // So the "record seconds" and playback time isn't fully accurate
@@ -45,12 +46,15 @@ static int btn_value;
 static u32 audio_buffer[MAX_SAMPLES * 2];
 static int recorded_samples = 0;
 static int playing = 0;
+static int playing_drum = 0;
 static int paused = 0;
 static int record_flag = 0;
 static int play_flag = 0;
 static int pause_flag = 0;
+static int drum_flag = 0;
 
 u32 delay_us = 476;
+// u32 delay_us_drum = 60;
 
 //----------------------------------------------------
 // PROTOTYPE FUNCTIONS
@@ -70,11 +74,17 @@ void BTN_Intr_Handler(void *InstancePtr) {
     }
 
     btn_value = XGpio_DiscreteRead(&BTNInst, 1);
-
+    // need to add switches so buttons can do more than 5 things hehe
     if (btn_value == 8) {
+    	// recording functionality
         //record_flag = 1;
-		paused = !paused;  // Toggle paused directly
-		xil_printf("Audio %s.\r\n", paused ? "Paused" : "Resumed");
+
+    	// play/pause functionality
+		//paused = !paused;  // Toggle paused directly
+		//xil_printf("Audio %s.\r\n", paused ? "Paused" : "Resumed");
+
+    	// drum sounds
+    	drum_flag = 1;
     } else if (btn_value == 4) {
         play_flag = 1;
     } else if (btn_value == 16) {
@@ -160,6 +170,10 @@ void play_audio() {
             usleep(500);  // Prevent CPU overuse
         }
 
+        // call play drum here inside if statement?
+        // basically make an if statement, so if drum flag = 1 then
+        // add drum effects at that point to the song indices
+
         Xil_Out32(I2S_DATA_TX_L_REG, song[i]*100);  // Send left channel
         Xil_Out32(I2S_DATA_TX_R_REG, song[i]*100);  // Send right channel
 
@@ -181,12 +195,45 @@ void play_audio() {
     play_flag = 0;
 }
 
+void play_drum() {
+	xil_printf("Playing drum sample from memory...\r\n");
+	playing_drum = 1;
+	int i = 0;
+	int * drum = (int *)0x020BB00C;
+	int NUM_SAMPLES_DRUM = 26880;
+
+	while (playing_drum) {
+		while (paused) {
+			// Stay in this loop until unpaused
+			usleep(500);  // Prevent CPU overuse
+		}
+
+		Xil_Out32(I2S_DATA_TX_L_REG, drum[i]*100);  // Send left channel
+		Xil_Out32(I2S_DATA_TX_R_REG, drum[i]*100);  // Send right channel
+
+		i++; // Move to the next left sample for the next iteration
+
+		for(int j=0;j<delay_us;j++){
+			asm("NOP");
+		}
+
+		if (i >= NUM_SAMPLES_DRUM) {
+			playing_drum = 0;
+		}
+	}
+	xil_printf("Drum effect complete.\r\n");
+	drum_flag = 0;
+}
+
 
 void menu() {
     while (1) {
 //        if (record_flag) {
 //            record_audio();
 //        }
+    	if (drum_flag) {
+    		play_drum();
+    	}
         if (play_flag) {
             play_audio();
         }
