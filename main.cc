@@ -14,6 +14,7 @@
 #include "xparameters.h"
 #include "xpseudo_asm.h"
 #include "xil_exception.h"
+#include "math.h"
 
 #define COMM_VAL (*(volatile unsigned long *)(0xFFFF0000))
 extern u32 MMUTable;
@@ -28,6 +29,12 @@ extern u32 MMUTable;
 
 #define BTN_INT 			XGPIO_IR_CH1_MASK
 #define TMR_LOAD			0xF8000000
+
+// Define the sine wave parameters
+#define AMPLITUDE 200     // Amplitude of the sine wave
+#define FREQUENCY 2      // Frequency of the sine wave
+#define OFFSET 512       // Vertical offset for sine wave, so it doesn't go out of screen
+#define PI 3.14159265358979
 
 XGpio LEDInst, BTNInst;
 XScuGic INTCInst;
@@ -78,6 +85,35 @@ void renderVerticalBars(int *frameBuffer, int screenWidth, int screenHeight)
                 frameBuffer[y * screenWidth + x] = color;  // Set pixel color
             }
         }
+    }
+}
+
+void clearScreen(int *frameBuffer, int screenWidth, int screenHeight)
+{
+    for (int y = 0; y < screenHeight; y++) {
+        for (int x = 0; x < screenWidth; x++) {
+            frameBuffer[y * screenWidth + x] = 0x000000;  // Set pixel to black (0x000000)
+        }
+    }
+}
+
+// Function to render a sine wave on the screen
+void renderSineWave(int *frameBuffer, int screenWidth, int screenHeight)
+{
+	// First clear the screen to black
+	clearScreen(frameBuffer, screenWidth, screenHeight);
+
+    int midHeight = screenHeight / 2;  // Center of the screen vertically
+    for (int x = 0; x < screenWidth; x++) {
+        // Calculate sine value for current x-coordinate
+        float sineValue = sin(2 * PI * FREQUENCY * (float)x / (float)screenWidth);
+
+        // Calculate the corresponding y-coordinate for sine wave
+        int y = (int)(AMPLITUDE * sineValue) + midHeight;
+
+        // Set the pixel color for the sine wave point
+        // Assuming we want the sine wave to be white
+        frameBuffer[y * screenWidth + x] = 0xFFFFFF;  // White color
     }
 }
 
@@ -151,67 +187,6 @@ void TMR_Intr_Handler(void *data)
 // MAIN FUNCTION
 //----------------------------------------------------
 
-//int main (void)
-//{
-//	init_platform();
-//	print("CPU1: init_platform\n\r");
-//
-//	//Disable cache on OCM
-//	// S=b1 TEX=b100 AP=b11, Domain=b1111, C=b0, B=b0
-//	Xil_SetTlbAttributes(0xFFFF0000,0x14de2);
-//
-//    int status;
-//    //----------------------------------------------------
-//    // INITIALIZE THE PERIPHERALS & SET DIRECTIONS OF GPIO
-//    //----------------------------------------------------
-//
-//    // Initialise Push Buttons
-//    status = XGpio_Initialize(&BTNInst, BTNS_DEVICE_ID);
-//    if(status != XST_SUCCESS) return XST_FAILURE;
-//
-//    // Set all buttons direction to inputs
-//    XGpio_SetDataDirection(&BTNInst, 1, 0xFF);
-//
-//
-//    //----------------------------------------------------
-//    // SETUP THE TIMER
-//    //----------------------------------------------------
-//    //status = XTmrCtr_Initialize(&TMRInst, TMR_DEVICE_ID);
-//    //if(status != XST_SUCCESS) return XST_FAILURE;
-//    //XTmrCtr_SetHandler(&TMRInst, TMR_Intr_Handler, &TMRInst);
-//    //XTmrCtr_SetResetValue(&TMRInst, 0, TMR_LOAD);
-//    //XTmrCtr_SetOptions(&TMRInst, 0, XTC_INT_MODE_OPTION | XTC_AUTO_RELOAD_OPTION);
-//
-//
-//    // Initialize interrupt controller
-//    status = IntcInitFunction(INTC_DEVICE_ID, &TMRInst, &BTNInst);
-//    if(status != XST_SUCCESS) return XST_FAILURE;
-//
-//    XTmrCtr_Start(&TMRInst, 0);
-//
-//    //while(1);
-//    // Simulate a frame buffer (typically this would be a pointer to the actual display memory)
-//	int *frameBuffer = (int *)0x00900000;  // Example base address for framebuffer
-//	int screenWidth = 1280;   // screen width
-//	int screenHeight = 1024;  // screen height
-//
-//	print("yeesssss");
-//  	while(1){
-//  		while(COMM_VAL == 0){
-//		};
-//
-//  		print("Hello World - ARM1\n\r");
-//
-//  		renderVerticalBars(frameBuffer, screenWidth, screenHeight);
-//
-//		sleep(1);
-//		COMM_VAL = 0;
-//  	}
-//
-//  	cleanup_platform();
-//  	return 0;
-//}
-
 int main()
 {
     init_platform();
@@ -222,22 +197,15 @@ int main()
     Xil_SetTlbAttributes(0xFFFF0000,0x14de2);
 
     while(1){
-//        while(COMM_VAL == 0){
-//        	// to run while other is running
-//        	renderVerticalBars(frameBuffer, screenWidth, screenHeight);
-//        };
-//
-//        print("Hello World - ARM1\n\r");
-//        sleep(1);
-//        COMM_VAL = 0;
 
     	if(COMM_VAL == 1){
     		shiftBarsRight();
-    		renderVerticalBars(frameBuffer, screenWidth, screenHeight);
+//    		renderVerticalBars(frameBuffer, screenWidth, screenHeight);
+    		renderSineWave(frameBuffer, screenWidth, screenHeight);
     		COMM_VAL = 0;
     	}
-    	renderVerticalBars(frameBuffer, screenWidth, screenHeight);
-    	//shiftBarsLeft();
+//    	renderVerticalBars(frameBuffer, screenWidth, screenHeight);
+    	renderSineWave(frameBuffer, screenWidth, screenHeight);
 
     }
 
