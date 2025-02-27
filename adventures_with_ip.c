@@ -118,7 +118,6 @@ void BTN_Intr_Handler(void *InstancePtr) {
     	// Center button
     	//COMM_VAL = 1;
     	clap_flag=1;
-    	j=0;
     }
 
     (void)XGpio_InterruptClear(&BTNInst, BTN_INT);
@@ -191,7 +190,7 @@ void play_audio() {
 
         // Milestone 2 stuff: Add drum sound here inside if statement
         // Then add drum effects at that point to the song indices
-        int audio_sample = song[i]*50;
+        int audio_sample = song[i]*5;
 
         if (drum_flag && j < NUM_SAMPLES_DRUM) {
            audio_sample += drum[j] * 150;  // Simple addition mixing
@@ -229,21 +228,10 @@ void play_audio() {
 		// Can prob get rid of dis
 		if (j >= NUM_SAMPLES_DRUM) {
 			drum_flag = 0;
-//			j=0;
-		}
-
-		if (j >= NUM_SAMPLES_SNARE) {
-			snare_flag = 0;
-//			j=0;
-		}
-
-		if (j >= NUM_SAMPLES_CLAP) {
-			clap_flag = 0;
-//			j=0;
+			j=0;
 		}
     }
     xil_printf("Playback stopped.\r\n");
-    AUDIO_SAMPLE_CURRENT_MOMENT = 0;
     play_flag = 0;
     drum_flag = 0;
     snare_flag = 0;
@@ -279,6 +267,64 @@ void play_drum() {
 	drum_flag = 0;
 }
 
+void play_snare() {
+	xil_printf("Playing snare sample from memory...\r\n");
+	playing_snare = 1;
+	int i = 0;
+
+
+	while (playing_snare) {
+		while (paused) {
+			// Stay in this loop until unpaused
+			usleep(500);  // Prevent CPU overuse
+		}
+
+		Xil_Out32(I2S_DATA_TX_L_REG, snare[i]*100);  // Send left channel
+		Xil_Out32(I2S_DATA_TX_R_REG, snare[i]*100);  // Send right channel
+
+		i++; // Move to the next left sample for the next iteration
+
+		for(int j=0;j<delay_us;j++){
+			asm("NOP");
+		}
+
+		if (i >= NUM_SAMPLES_SNARE) {
+			playing_snare = 0;
+		}
+	}
+	xil_printf("Snare effect complete.\r\n");
+	snare_flag = 0;
+}
+
+void play_clap() {
+	xil_printf("Playing clap sample from memory...\r\n");
+	playing_clap = 1;
+	int i = 0;
+
+
+	while (playing_clap) {
+		while (paused) {
+			// Stay in this loop until unpaused
+			usleep(500);  // Prevent CPU overuse
+		}
+
+		Xil_Out32(I2S_DATA_TX_L_REG, clap[i]*100);  // Send left channel
+		Xil_Out32(I2S_DATA_TX_R_REG, clap[i]*100);  // Send right channel
+
+		i++; // Move to the next left sample for the next iteration
+
+		for(int j=0;j<delay_us;j++){
+			asm("NOP");
+		}
+
+		if (i >= NUM_SAMPLES_CLAP) {
+			playing_clap = 0;
+		}
+	}
+	xil_printf("Clap effect complete.\r\n");
+	clap_flag = 0;
+}
+
 
 void menu() {
     while (1) {
@@ -288,6 +334,12 @@ void menu() {
     	if (drum_flag) {
     		play_drum();
     	}
+    	if (snare_flag) {
+			play_snare();
+		}
+    	if (clap_flag) {
+			play_clap();
+		}
         if (play_flag) {
             play_audio();
         }
