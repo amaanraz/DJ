@@ -117,7 +117,8 @@ void BTN_Intr_Handler(void *InstancePtr) {
     } else if (btn_value == 1){
     	// Center button
     	//COMM_VAL = 1;
-    	clap_flag=1
+    	clap_flag=1;
+    	j=0;
     }
 
     (void)XGpio_InterruptClear(&BTNInst, BTN_INT);
@@ -190,7 +191,7 @@ void play_audio() {
 
         // Milestone 2 stuff: Add drum sound here inside if statement
         // Then add drum effects at that point to the song indices
-        int audio_sample = song[i]*5;
+        int audio_sample = song[i]*50;
 
         if (drum_flag && j < NUM_SAMPLES_DRUM) {
            audio_sample += drum[j] * 150;  // Simple addition mixing
@@ -228,10 +229,21 @@ void play_audio() {
 		// Can prob get rid of dis
 		if (j >= NUM_SAMPLES_DRUM) {
 			drum_flag = 0;
-			j=0;
+//			j=0;
+		}
+
+		if (j >= NUM_SAMPLES_SNARE) {
+			snare_flag = 0;
+//			j=0;
+		}
+
+		if (j >= NUM_SAMPLES_CLAP) {
+			clap_flag = 0;
+//			j=0;
 		}
     }
     xil_printf("Playback stopped.\r\n");
+    AUDIO_SAMPLE_CURRENT_MOMENT = 0;
     play_flag = 0;
     drum_flag = 0;
     snare_flag = 0;
