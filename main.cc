@@ -17,6 +17,8 @@
 #include "math.h"
 
 #define COMM_VAL (*(volatile unsigned long *)(0xFFFF0000))
+#define AUDIO_SAMPLE_CURRENT_MOMENT (*(volatile unsigned long *)(0xFFFF0001))
+
 extern u32 MMUTable;
 
 // Parameter definitions
@@ -117,6 +119,52 @@ void renderSineWave(int *frameBuffer, int screenWidth, int screenHeight)
     }
 }
 
+void draw_pixel(int *frameBuffer, int x, int y, int screenWidth, int color) {
+    if (x >= 0 && x < screenWidth && y >= 0) {
+        frameBuffer[y * screenWidth + x] = color;
+    }
+}
+
+void draw_sine_wave(int *frameBuffer, int screenWidth, int screenHeight) {
+    static float phase = 0.0;
+
+    // Read the latest audio value
+    unsigned long audio_value = AUDIO_SAMPLE_CURRENT_MOMENT;
+
+    // Normalize and increase amplitude
+    float amplitude = ((float)(audio_value & 0xFFF) / 19.0f) * 1.5f; // Increase amplitude
+    amplitude = fminf(amplitude, (screenHeight / 2 ));  // Slightly less restrictive clamp
+
+    // Set frequency to a fixed value
+    float frequency = 0.025f;
+
+    // Clear the framebuffer
+    for (int i = 0; i < screenWidth * screenHeight; i++) {
+        frameBuffer[i] = 0x000000;  // Black background
+    }
+
+    // Draw the sine wave
+    for (int x = 0; x < screenWidth; x++) {
+        int y = (int)(screenHeight / 2 + amplitude * sinf(phase + x * frequency));
+
+        if (y >= 0 && y < screenHeight) {
+        	for (int dx = -2; dx <= 2; dx++) {
+        	    for (int dy = -2; dy <= 2; dy++) {
+        	        if (dx * dx + dy * dy <= 4) {  // Circle-like shape
+        	            int x_thick = x + dx;
+        	            int y_thick = y + dy;
+        	            if (x_thick >= 0 && x_thick < screenWidth && y_thick >= 0 && y_thick < screenHeight) {
+        	                draw_pixel(frameBuffer, x_thick, y_thick, screenWidth, 0xFFFFFF);
+        	            }
+        	        }
+        	    }
+        	}
+        }
+    }
+
+//    phase += 0.05;  // Move wave forward
+}
+
 void shiftBarsLeft(){
 	// Shift array like circular left
 	unsigned int temp = barColors[0];  // Save the first element
@@ -199,14 +247,17 @@ int main()
     while(1){
 
     	if(COMM_VAL == 1){
-    		shiftBarsRight();
+//    		shiftBarsRight();
 //    		renderVerticalBars(frameBuffer, screenWidth, screenHeight);
-    		renderSineWave(frameBuffer, screenWidth, screenHeight);
+//    		renderSineWave(frameBuffer, screenWidth, screenHeight);
+    		draw_sine_wave(frameBuffer, screenWidth, screenHeight);
     		COMM_VAL = 0;
     	}
 //    	renderVerticalBars(frameBuffer, screenWidth, screenHeight);
-    	renderSineWave(frameBuffer, screenWidth, screenHeight);
+//    	renderSineWave(frameBuffer, screenWidth, screenHeight);
+    	draw_sine_wave(frameBuffer, screenWidth, screenHeight);
 
+    	//printf("Audio Sample: %lu\n", AUDIO_SAMPLE_CURRENT_MOMENT );
     }
 
     cleanup_platform();
