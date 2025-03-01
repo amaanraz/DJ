@@ -7,7 +7,9 @@
 #include "xil_printf.h"
 #include "xpseudo_asm.h"
 #include "xil_exception.h"
+//#include <unistd.h>  // For usleep
 
+#define DEBOUNCE_DELAY 1000
 #define sev() __asm__("sev")
 #define ARM1_STARTADR 0xFFFFFFF0
 #define ARM1_BASEADDR 0x10080000
@@ -17,6 +19,8 @@
 // dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list_drum.data 0x020BB00C
 // dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list_snare.data 0x028A4010
 // dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list_clap.data 0x0308D014
+// dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list_kickhard.data 0x03876018
+// dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list_hihat.data 0x0328D014
 
 // Need to make super long to work for some reason
 // So the "record seconds" and playback time isn't fully accurate
@@ -24,7 +28,7 @@
 #define RECORD_SECONDS 35
 #define MAX_SAMPLES (SAMPLES_PER_SECOND * RECORD_SECONDS * 15)
 int NUM_BYTES_BUFFER = 5242880;
-int j = 0; // for drum reset
+int j = 0; // for sound reset
 
 #include "xscugic.h"
 #include "xil_exception.h"
@@ -51,6 +55,10 @@ static u32 audio_buffer[MAX_SAMPLES * 2];
 static int recorded_samples = 0;
 static int playing = 0;
 static int playing_drum = 0;
+static int playing_snare = 0;
+static int playing_clap = 0;
+//static int playing_kickhard = 0;
+//static int playing_hihat = 0;
 static int paused = 0;
 static int record_flag = 0;
 static int play_flag = 0;
@@ -58,6 +66,8 @@ static int pause_flag = 0;
 static int drum_flag = 0;
 static int snare_flag = 0;
 static int clap_flag = 0;
+static int kickhard_flag = 0;
+static int hihat_flag = 0;
 
 u32 delay_us = 476;
 
@@ -70,6 +80,10 @@ int * snare = (int *)0x028A4010;
 int NUM_SAMPLES_SNARE = 32256;
 int * clap = (int *)0x0308D014;
 int NUM_SAMPLES_CLAP = 35712;
+int * kickhard = (int *)0x03876018;
+int NUM_SAMPLES_KICKHARD = 19584;
+int * hihat = (int *)0x0328D014;
+int NUM_SAMPLES_HIHAT = 48384;
 
 // u32 delay_us_drum = 60;
 
@@ -92,6 +106,7 @@ void BTN_Intr_Handler(void *InstancePtr) {
 
     btn_value = XGpio_DiscreteRead(&BTNInst, 1);
     if (btn_value == 8) {
+    	// right button
     	// Recording functionality
         // record_flag = 1;
 
@@ -102,22 +117,28 @@ void BTN_Intr_Handler(void *InstancePtr) {
     	// Sound testing - have in separate buttons later once switches work
     	//drum_flag = 1;
     	snare_flag = 1;
-    	//clap_flag = 1;
     	j=0;
     } else if (btn_value == 4) {
-        play_flag = 1;
+//      play_flag = 1;
+    	clap_flag=1;
+    	j=0;
     } else if (btn_value == 16) {
-        delay_us = delay_us + 1;
-        xil_printf("Delay (us): %d", delay_us);
+//        delay_us = delay_us + 1;
+//        xil_printf("Delay (us): %d", delay_us);
+    	kickhard_flag = 1;
+    	j=0;
     } else if(btn_value == 2){
-    	if (delay_us > 1){
-    		delay_us = delay_us - 1;
-    	}
-        xil_printf("Delay (us): %d", delay_us);
+//    	if (delay_us > 1){
+//    		delay_us = delay_us - 1;
+//    	}
+//        xil_printf("Delay (us): %d", delay_us);
+    	hihat_flag=1;
+    	j=0;
+    	usleep(4000);
     } else if (btn_value == 1){
     	// Center button
     	//COMM_VAL = 1;
-    	clap_flag=1;
+    	play_flag = 1;
     }
 
     (void)XGpio_InterruptClear(&BTNInst, BTN_INT);
@@ -190,7 +211,7 @@ void play_audio() {
 
         // Milestone 2 stuff: Add drum sound here inside if statement
         // Then add drum effects at that point to the song indices
-        int audio_sample = song[i]*5;
+        int audio_sample = song[i]*50;
 
         if (drum_flag && j < NUM_SAMPLES_DRUM) {
            audio_sample += drum[j] * 150;  // Simple addition mixing
@@ -202,6 +223,14 @@ void play_audio() {
 		}
         if (clap_flag && j < NUM_SAMPLES_CLAP) {
 			audio_sample += clap[j] * 100;  // Simple addition mixing
+			j++;  // Move drum sample forward
+		}
+        if (kickhard_flag && j < NUM_SAMPLES_KICKHARD) {
+			audio_sample += kickhard[j] * 100;  // Simple addition mixing
+			j++;  // Move drum sample forward
+		}
+        if (hihat_flag && j < NUM_SAMPLES_HIHAT) {
+			audio_sample += hihat[j] * 100;  // Simple addition mixing
 			j++;  // Move drum sample forward
 		}
 
@@ -228,14 +257,37 @@ void play_audio() {
 		// Can prob get rid of dis
 		if (j >= NUM_SAMPLES_DRUM) {
 			drum_flag = 0;
-			j=0;
+//			j=0;
+		}
+
+		if (j >= NUM_SAMPLES_SNARE) {
+			snare_flag = 0;
+//			j=0;
+		}
+
+		if (j >= NUM_SAMPLES_CLAP) {
+			clap_flag = 0;
+//			j=0;
+		}
+
+		if (j >= NUM_SAMPLES_KICKHARD) {
+			kickhard_flag = 0;
+//			j=0;
+		}
+
+		if (j >= NUM_SAMPLES_HIHAT) {
+			hihat_flag = 0;
+//			j=0;
 		}
     }
     xil_printf("Playback stopped.\r\n");
+    AUDIO_SAMPLE_CURRENT_MOMENT = 0;
     play_flag = 0;
     drum_flag = 0;
     snare_flag = 0;
     clap_flag = 0;
+    kickhard_flag = 0;
+    hihat_flag = 0;
 }
 
 void play_drum() {
@@ -279,6 +331,7 @@ void play_snare() {
 			usleep(500);  // Prevent CPU overuse
 		}
 
+		AUDIO_SAMPLE_CURRENT_MOMENT = snare[i];
 		Xil_Out32(I2S_DATA_TX_L_REG, snare[i]*100);  // Send left channel
 		Xil_Out32(I2S_DATA_TX_R_REG, snare[i]*100);  // Send right channel
 
@@ -299,7 +352,7 @@ void play_snare() {
 void play_clap() {
 	xil_printf("Playing clap sample from memory...\r\n");
 	playing_clap = 1;
-	int i = 0;
+//	int i = 0;
 
 
 	while (playing_clap) {
@@ -308,16 +361,19 @@ void play_clap() {
 			usleep(500);  // Prevent CPU overuse
 		}
 
-		Xil_Out32(I2S_DATA_TX_L_REG, clap[i]*100);  // Send left channel
-		Xil_Out32(I2S_DATA_TX_R_REG, clap[i]*100);  // Send right channel
 
-		i++; // Move to the next left sample for the next iteration
+		AUDIO_SAMPLE_CURRENT_MOMENT = clap[j];
+		Xil_Out32(I2S_DATA_TX_L_REG, clap[j]*100);  // Send left channel
+		Xil_Out32(I2S_DATA_TX_R_REG, clap[j]*100);  // Send right channel
+
+		j++; // Move to the next left sample for the next iteration
 
 		for(int j=0;j<delay_us;j++){
 			asm("NOP");
 		}
 
-		if (i >= NUM_SAMPLES_CLAP) {
+
+		if (j >= NUM_SAMPLES_CLAP || j == 0) {
 			playing_clap = 0;
 		}
 	}
