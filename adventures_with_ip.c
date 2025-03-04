@@ -21,6 +21,8 @@
 // dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list_clap.data 0x0308D014
 // dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list_kickhard.data 0x03876018
 // dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list_hihat.data 0x0328D014
+// ADD ACTUAL BASSDROP EFFECT
+// dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list_bassdrop.data 0x0348D014
 
 // Need to make super long to work for some reason
 // So the "record seconds" and playback time isn't fully accurate
@@ -42,6 +44,7 @@ int j = 0; // for sound reset
 #define INTC_GPIO_INTERRUPT_ID XPAR_FABRIC_AXI_GPIO_1_IP2INTC_IRPT_INTR
 
 #define BTN_INT 			XGPIO_IR_CH1_MASK
+#define SWT_INT			    XGPIO_IR_CH2_MASK
 #define TMR_LOAD			0xF8000000
 
 XGpio LEDInst, BTNInst;
@@ -49,6 +52,7 @@ XScuGic INTCInst;
 
 // static int led_data;
 static int btn_value;
+static int swt_value;
 
 // Stereo buffer
 static u32 audio_buffer[MAX_SAMPLES * 2];
@@ -68,6 +72,7 @@ static int snare_flag = 0;
 static int clap_flag = 0;
 static int kickhard_flag = 0;
 static int hihat_flag = 0;
+static int bassdrop_flag = 0;
 
 u32 delay_us = 476;
 
@@ -84,7 +89,8 @@ int * kickhard = (int *)0x03876018;
 int NUM_SAMPLES_KICKHARD = 19584;
 int * hihat = (int *)0x0328D014;
 int NUM_SAMPLES_HIHAT = 48384;
-
+int * bassdrop = (int *)0x0348D014;
+int NUM_SAMPLES_BASSDROP = 774720;
 // u32 delay_us_drum = 60;
 
 //----------------------------------------------------
@@ -100,49 +106,68 @@ static int IntcInitFunction(u16 DeviceId, XGpio *GpioInstancePtr);
 
 void BTN_Intr_Handler(void *InstancePtr) {
     XGpio_InterruptDisable(&BTNInst, BTN_INT);
-    if ((XGpio_InterruptGetStatus(&BTNInst) & BTN_INT) != BTN_INT) {
-        return;
-    }
+    XGpio_InterruptDisable(&BTNInst, SWT_INT);
 
     btn_value = XGpio_DiscreteRead(&BTNInst, 1);
-    if (btn_value == 8) {
-    	// right button
-    	// Recording functionality
-        // record_flag = 1;
+    swt_value = XGpio_DiscreteRead(&BTNInst, 2);
 
-    	// Play/pause functionality
-		// paused = !paused;  // Toggle paused directly
-		// xil_printf("Audio %s.\r\n", paused ? "Paused" : "Resumed");
+    xil_printf("Switches values: %d", swt_value);
 
-    	// Sound testing - have in separate buttons later once switches work
-    	//drum_flag = 1;
-    	snare_flag = 1;
-    	j=0;
-    } else if (btn_value == 4) {
-//      play_flag = 1;
-    	clap_flag=1;
-    	j=0;
-    } else if (btn_value == 16) {
-//        delay_us = delay_us + 1;
-//        xil_printf("Delay (us): %d", delay_us);
-    	kickhard_flag = 1;
-    	j=0;
-    } else if(btn_value == 2){
-//    	if (delay_us > 1){
-//    		delay_us = delay_us - 1;
-//    	}
-//        xil_printf("Delay (us): %d", delay_us);
-    	hihat_flag=1;
-    	j=0;
-    	usleep(4000);
-    } else if (btn_value == 1){
-    	// Center button
-    	//COMM_VAL = 1;
-    	play_flag = 1;
+    if(swt_value == 1){
+		if (btn_value == 8) {
+			// right button
+			snare_flag = 1;
+			j=0;
+		} else if (btn_value == 4) {
+	//      play_flag = 1;
+			clap_flag=1;
+			j=0;
+		} else if (btn_value == 16) {
+	//        delay_us = delay_us + 1;
+	//        xil_printf("Delay (us): %d", delay_us);
+			kickhard_flag = 1;
+			j=0;
+		} else if(btn_value == 2){
+	//    	if (delay_us > 1){
+	//    		delay_us = delay_us - 1;
+	//    	}
+	//        xil_printf("Delay (us): %d", delay_us);
+			hihat_flag=1;
+			j=0;
+			usleep(4000);
+		} else if (btn_value == 1){
+			// Center button
+			//COMM_VAL = 1;
+			//drum_flag = 1;
+			bassdrop_flag=1;
+			j=0;
+		}
+    } else {
+    	// if switches 0, plays regular stuff
+    	if (btn_value == 8) {
+			// right button
+			// Play/pause functionality
+			 paused = !paused;  // Toggle paused directly
+			 xil_printf("Audio %s.\r\n", paused ? "Paused" : "Resumed");
+		} else if (btn_value == 4) {
+			// Recording functionality
+			// record_flag = 1;
+		} else if (btn_value == 16) {
+			delay_us = delay_us + 1;
+		} else if(btn_value == 2){
+			if (delay_us > 1){
+				delay_us = delay_us - 1;
+			}
+		} else if (btn_value == 1){
+			// Center button
+			play_flag = 1;
+		}
     }
 
     (void)XGpio_InterruptClear(&BTNInst, BTN_INT);
+    (void)XGpio_InterruptClear(&BTNInst, SWT_INT);
     XGpio_InterruptEnable(&BTNInst, BTN_INT);
+    XGpio_InterruptEnable(&BTNInst, SWT_INT);
 }
 //----------------------------------------------------
 // INITIAL SETUP FUNCTIONS
@@ -150,6 +175,7 @@ void BTN_Intr_Handler(void *InstancePtr) {
 
 int InterruptSystemSetup(XScuGic *XScuGicInstancePtr) {
     XGpio_InterruptEnable(&BTNInst, BTN_INT);
+    XGpio_InterruptEnable(&BTNInst, SWT_INT);
     XGpio_InterruptGlobalEnable(&BTNInst);
 
     Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
@@ -176,6 +202,7 @@ int IntcInitFunction(u16 DeviceId, XGpio *GpioInstancePtr) {
     if (status != XST_SUCCESS) return XST_FAILURE;
 
     XGpio_InterruptEnable(GpioInstancePtr, 1);
+    XGpio_InterruptEnable(GpioInstancePtr, 2);
     XGpio_InterruptGlobalEnable(GpioInstancePtr);
     XScuGic_Enable(&INTCInst, INTC_GPIO_INTERRUPT_ID);
 
@@ -233,6 +260,10 @@ void play_audio() {
 			audio_sample += hihat[j] * 100;  // Simple addition mixing
 			j++;  // Move drum sample forward
 		}
+        if (bassdrop_flag && j < NUM_SAMPLES_BASSDROP) {
+			audio_sample += bassdrop[j] * 100;  // Simple addition mixing
+			j++;  // Move drum sample forward
+		}
 
         // write to the global thing for like dual core connection
         AUDIO_SAMPLE_CURRENT_MOMENT = audio_sample;
@@ -276,6 +307,11 @@ void play_audio() {
 		}
 
 		if (j >= NUM_SAMPLES_HIHAT) {
+			hihat_flag = 0;
+//			j=0;
+		}
+
+		if (j >= NUM_SAMPLES_BASSDROP) {
 			hihat_flag = 0;
 //			j=0;
 		}
@@ -428,6 +464,7 @@ int main()
 	if (status != XST_SUCCESS) return XST_FAILURE;
 
 	XGpio_SetDataDirection(&BTNInst, 1, 0xFF);
+	XGpio_SetDataDirection(&BTNInst, 2, 0xFF);
 
 	status = IntcInitFunction(INTC_DEVICE_ID, &BTNInst);
 	if (status != XST_SUCCESS) return XST_FAILURE;
