@@ -14,8 +14,24 @@
 #include "xparameters.h"
 #include "xpseudo_asm.h"
 #include "xil_exception.h"
+#include "math.h"
+#include <stdlib.h>
+#include <time.h>    // For timing
 
 #define COMM_VAL (*(volatile unsigned long *)(0xFFFF0000))
+#define AUDIO_SAMPLE_CURRENT_MOMENT (*(volatile unsigned long *)(0xFFFF0001))
+
+// MILESTONE 3 COMMUNICATION VARS FOR SCREEN
+#define RIGHT_FLAG (*(volatile unsigned long *)(0xFFFF0008))
+#define HOME_FLAG (*(volatile unsigned long *)(0xFFFF0012))
+#define RECORD_FLAG (*(volatile unsigned long *)(0xFFFF0016))
+#define SAMPLE_FLAG (*(volatile unsigned long *)(0xFFFF0032))
+
+// dow -data C:/Users/tmm12/Desktop/sources/images/Homepage.data 0x018D2012
+int * homepage = (int *)0x018D2012;
+int * recording = (int *)0x020BB00C;
+int * sample = (int *)0x048BB00C;
+
 extern u32 MMUTable;
 
 // Parameter definitions
@@ -29,20 +45,19 @@ extern u32 MMUTable;
 #define BTN_INT 			XGPIO_IR_CH1_MASK
 #define TMR_LOAD			0xF8000000
 
+// Define the sine wave parameters
+#define AMPLITUDE 200     // Amplitude of the sine wave
+#define FREQUENCY 2      // Frequency of the sine wave
+#define OFFSET 512       // Vertical offset for sine wave, so it doesn't go out of screen
+#define PI 3.14159265358979
+
 XGpio LEDInst, BTNInst;
 XScuGic INTCInst;
 XTmrCtr TMRInst;
 static int led_data;
 static int btn_value;
 static int tmr_count;
-
-// Bar colors in RGB format
-unsigned int barColors[6] = {0xFF0000,  // Red
-                              0x00FF00,  // Green
-                              0x0000FF,  // Blue
-                              0xFFFF00,  // Yellow
-                              0xFF00FF, // Magenta
-							  0xFFFFFF}; // White
+static int draw_sine = 0;
 
 int *frameBuffer = (int *)0x00900000;  // Example base address for framebuffer
 int screenWidth = 1280;   // screen width
@@ -62,71 +77,121 @@ static int IntcInitFunction(u16 DeviceId, XTmrCtr *TmrInstancePtr, XGpio *GpioIn
 // - LED flashing
 //----------------------------------------------------
 
-// Function to render vertical bars on the screen
-void renderVerticalBars(int *frameBuffer, int screenWidth, int screenHeight)
+
+void clearScreen(int *frameBuffer, int screenWidth, int screenHeight)
 {
-    int barWidth = screenWidth / 6;  // Divide the screen into 5 equal bars
-    int barHeight = screenHeight;
-
-    for (int i = 0; i < 6; i++) {
-        // Set the color for the current bar
-        unsigned int color = barColors[i];
-
-        // Render each bar in the corresponding section of the screen
-        for (int y = 0; y < barHeight; y++) {
-            for (int x = i * barWidth; x < (i + 1) * barWidth; x++) {
-                frameBuffer[y * screenWidth + x] = color;  // Set pixel color
-            }
+    for (int y = 0; y < screenHeight; y++) {
+        for (int x = 0; x < screenWidth; x++) {
+            frameBuffer[y * screenWidth + x] = 0x000000;  // Set pixel to black (0x000000)
         }
     }
 }
 
-void shiftBarsLeft(){
-	// Shift array like circular left
-	unsigned int temp = barColors[0];  // Save the first element
-	for (int i = 0; i < 5; i++) {
-	    barColors[i] = barColors[i + 1];  // Shift each element left
-	}
-	barColors[5] = temp;  // Place the first element in the last position
-	renderVerticalBars(frameBuffer, screenWidth, screenHeight);
-}
-
-void shiftBarsRight(){
-	 // Circular right shift: Shift all elements to the right, and the last element moves to the first position
-	unsigned int temp = barColors[5];  // Save the last element
-	for (int i = 5; i > 0; i--) {
-		barColors[i] = barColors[i - 1];  // Shift each element to the right
-	}
-	barColors[0] = temp;  // Place the last element in the first position
-	renderVerticalBars(frameBuffer, screenWidth, screenHeight);
-}
-
-void BTN_Intr_Handler(void *InstancePtr)
+void loadImage(int *frameBuffer, int screenWidth, int screenHeight, int *image)
 {
-	// Disable GPIO interrupts
-	XGpio_InterruptDisable(&BTNInst, BTN_INT);
-	// Ignore additional button presses
-	if ((XGpio_InterruptGetStatus(&BTNInst) & BTN_INT) !=
-			BTN_INT) {
-			return;
-		}
-	btn_value = XGpio_DiscreteRead(&BTNInst, 1);
-	// Increment counter based on button value
-	// Reset if centre button pressed
-//	if(btn_value != 1) led_data = led_data + btn_value;
-	if(btn_value == 8) {
-		shiftBarsRight();
-		renderVerticalBars(frameBuffer, screenWidth, screenHeight);
+    for (int y = 0; y < screenHeight; y++) {
+        for (int x = 0; x < screenWidth; x++) {
+            frameBuffer[y * screenWidth + x] = image[y * screenWidth + x];
+        }
+    }
+}
+
+void draw_pixel(int *frameBuffer, int x, int y, int screenWidth, int color) {
+    if (x >= 0 && x < screenWidth && y >= 0) {
+        frameBuffer[y * screenWidth + x] = color;
+    }
+}
+
+typedef struct {
+    int background;
+    int wave;
+} ColorTheme;
+
+#define NUM_THEMES 11
+ColorTheme colorThemes[NUM_THEMES] = {
+    {0x000000, 0xFFFFFF},  // Black bg, White wave
+	{0x1A1A2E, 0xE94560},  // Deep Blue & Vibrant Red
+	{0x162447, 0x1F4068},  // Navy & Light Blue
+	{0x2E1A47, 0xE4A5FF},  // Purple & Soft Pink
+	{0x102027, 0x26A69A},  // Dark Teal & Cyan
+	{0x0F2027, 0x4A90E2},  // Midnight Blue & Sky Blue
+	{0x1B1B1B, 0xF2A365},  // Charcoal & Warm Orange
+	{0x232931, 0x4ECCA3},  // Dark Gray & Mint Green
+	{0x3E1F47, 0xFFB6C1},  // Plum Purple & Pastel Pink
+	{0x283149, 0xDA0463},   // Steel Blue & Bright Pink
+	{0xFFFFFF, 0x000000}  // Black bg, White wave
+};
+
+static int current_theme_index = 0;
+static int frame_counter = 0;
+static int color_switch_interval = 30;
+
+void draw_sine_wave(int *frameBuffer, int screenWidth, int screenHeight) {
+    static float phase = 0.0;
+
+    // Read the latest audio value
+    unsigned long audio_value = AUDIO_SAMPLE_CURRENT_MOMENT;
+
+    // Normalize and scale amplitude
+    float amplitude = ((float)(audio_value & 0xFFF) / 19.0f) * 1.5f;
+    amplitude = fminf(amplitude, (screenHeight / 2));
+
+    // Set frequency to a fixed value
+    float frequency = 0.025f;
+
+    if (frame_counter >= color_switch_interval) {
+		current_theme_index = rand() % NUM_THEMES;
+		frame_counter = 0;  // Reset frame counter
+	} else {
+		frame_counter++;  // Increment frame counter
 	}
-	else if (btn_value == 4) {
-		shiftBarsLeft();
-		renderVerticalBars(frameBuffer, screenWidth, screenHeight);
-	}
-	//else led_data = 0;
-    //XGpio_DiscreteWrite(&LEDInst, 1, led_data);
-    (void)XGpio_InterruptClear(&BTNInst, BTN_INT);
-    // Enable GPIO interrupts
-    XGpio_InterruptEnable(&BTNInst, BTN_INT);
+
+
+
+    // Set background color
+    int backgroundColor = colorThemes[current_theme_index].background;
+    int waveColor = colorThemes[current_theme_index].wave;
+
+    // Clear framebuffer with new background color
+    for (int i = 0; i < screenWidth * screenHeight; i++) {
+        frameBuffer[i] = backgroundColor;
+    }
+
+
+    //  Draw the sine wave
+    for (int x = 0; x < screenWidth; x++) {
+        int y = (int)(screenHeight / 2 + amplitude * sinf(phase + x * frequency));
+
+        if (y >= 0 && y < screenHeight) {
+            // Thicker sine wave using circular shape
+            for (int dx = -2; dx <= 2; dx++) {
+                for (int dy = -2; dy <= 2; dy++) {
+                    if (dx * dx + dy * dy <= 4) { // Rounded thickness
+                        int x_thick = x + dx;
+                        int y_thick = y + dy;
+                        if (x_thick >= 0 && x_thick < screenWidth && y_thick >= 0 && y_thick < screenHeight) {
+                            draw_pixel(frameBuffer, x_thick, y_thick, screenWidth, waveColor);
+                        }
+                    }
+                }
+            }
+
+            // Glow effect (soft outer aura)
+            for (int glow_offset = 3; glow_offset <= 5; glow_offset++) {
+                int glow_y1 = y - glow_offset;
+                int glow_y2 = y + glow_offset;
+
+                if (glow_y1 >= 0 && glow_y1 < screenHeight) {
+                    draw_pixel(frameBuffer, x, glow_y1, screenWidth, (waveColor & 0xFFFFFF) | 0x22000000); // Faint glow
+                }
+                if (glow_y2 >= 0 && glow_y2 < screenHeight) {
+                    draw_pixel(frameBuffer, x, glow_y2, screenWidth, (waveColor & 0xFFFFFF) | 0x22000000); // Faint glow
+                }
+            }
+        }
+    }
+
+//    phase += 0.05;  // Move wave forward
 }
 
 void TMR_Intr_Handler(void *data)
@@ -151,67 +216,6 @@ void TMR_Intr_Handler(void *data)
 // MAIN FUNCTION
 //----------------------------------------------------
 
-//int main (void)
-//{
-//	init_platform();
-//	print("CPU1: init_platform\n\r");
-//
-//	//Disable cache on OCM
-//	// S=b1 TEX=b100 AP=b11, Domain=b1111, C=b0, B=b0
-//	Xil_SetTlbAttributes(0xFFFF0000,0x14de2);
-//
-//    int status;
-//    //----------------------------------------------------
-//    // INITIALIZE THE PERIPHERALS & SET DIRECTIONS OF GPIO
-//    //----------------------------------------------------
-//
-//    // Initialise Push Buttons
-//    status = XGpio_Initialize(&BTNInst, BTNS_DEVICE_ID);
-//    if(status != XST_SUCCESS) return XST_FAILURE;
-//
-//    // Set all buttons direction to inputs
-//    XGpio_SetDataDirection(&BTNInst, 1, 0xFF);
-//
-//
-//    //----------------------------------------------------
-//    // SETUP THE TIMER
-//    //----------------------------------------------------
-//    //status = XTmrCtr_Initialize(&TMRInst, TMR_DEVICE_ID);
-//    //if(status != XST_SUCCESS) return XST_FAILURE;
-//    //XTmrCtr_SetHandler(&TMRInst, TMR_Intr_Handler, &TMRInst);
-//    //XTmrCtr_SetResetValue(&TMRInst, 0, TMR_LOAD);
-//    //XTmrCtr_SetOptions(&TMRInst, 0, XTC_INT_MODE_OPTION | XTC_AUTO_RELOAD_OPTION);
-//
-//
-//    // Initialize interrupt controller
-//    status = IntcInitFunction(INTC_DEVICE_ID, &TMRInst, &BTNInst);
-//    if(status != XST_SUCCESS) return XST_FAILURE;
-//
-//    XTmrCtr_Start(&TMRInst, 0);
-//
-//    //while(1);
-//    // Simulate a frame buffer (typically this would be a pointer to the actual display memory)
-//	int *frameBuffer = (int *)0x00900000;  // Example base address for framebuffer
-//	int screenWidth = 1280;   // screen width
-//	int screenHeight = 1024;  // screen height
-//
-//	print("yeesssss");
-//  	while(1){
-//  		while(COMM_VAL == 0){
-//		};
-//
-//  		print("Hello World - ARM1\n\r");
-//
-//  		renderVerticalBars(frameBuffer, screenWidth, screenHeight);
-//
-//		sleep(1);
-//		COMM_VAL = 0;
-//  	}
-//
-//  	cleanup_platform();
-//  	return 0;
-//}
-
 int main()
 {
     init_platform();
@@ -222,22 +226,42 @@ int main()
     Xil_SetTlbAttributes(0xFFFF0000,0x14de2);
 
     while(1){
-//        while(COMM_VAL == 0){
-//        	// to run while other is running
-//        	renderVerticalBars(frameBuffer, screenWidth, screenHeight);
-//        };
-//
-//        print("Hello World - ARM1\n\r");
-//        sleep(1);
-//        COMM_VAL = 0;
-
-    	if(COMM_VAL == 1){
-    		shiftBarsRight();
-    		renderVerticalBars(frameBuffer, screenWidth, screenHeight);
-    		COMM_VAL = 0;
+    	if (RIGHT_FLAG == 1) {
+			xil_printf("Drawing Sine Wave!");
+			draw_sine = 1;
+			RIGHT_FLAG = 0;
+		}
+    	if (draw_sine == 1) {
+			draw_sine_wave(frameBuffer, screenWidth, screenHeight);
     	}
-    	renderVerticalBars(frameBuffer, screenWidth, screenHeight);
-    	//shiftBarsLeft();
+    	if (HOME_FLAG == 1) {
+    		draw_sine = 0;
+			xil_printf("Loading Homepage Image...\n");
+			loadImage(frameBuffer, screenWidth, screenHeight, homepage);
+			loadImage(frameBuffer, screenWidth, screenHeight, homepage);
+			HOME_FLAG = 0;  // Reset the flag after loading
+		}
+    	if (RECORD_FLAG == 1) {
+			draw_sine = 0;
+			xil_printf("Loading Recording Image...\n");
+			loadImage(frameBuffer, screenWidth, screenHeight, recording);
+			loadImage(frameBuffer, screenWidth, screenHeight, recording);
+			RECORD_FLAG = 0;  // Reset the flag after loading
+		}
+    	if (SAMPLE_FLAG == 1) {
+			draw_sine = 0;
+			xil_printf("Loading Sample Image...\n");
+			loadImage(frameBuffer, screenWidth, screenHeight, sample);
+			loadImage(frameBuffer, screenWidth, screenHeight, sample);
+			SAMPLE_FLAG = 0;  // Reset the flag after loading
+		}
+
+//    	if(COMM_VAL == 1){
+//    		draw_sine_wave(frameBuffer, screenWidth, screenHeight);
+//    		COMM_VAL = 0;
+//    	}
+//
+//    	draw_sine_wave(frameBuffer, screenWidth, screenHeight);
 
     }
 
@@ -245,100 +269,6 @@ int main()
     return 0;
 }
 
-//----------------------------------------------------
-// INITIAL SETUP FUNCTIONS
-//----------------------------------------------------
-
-int InterruptSystemSetup(XScuGic *XScuGicInstancePtr)
-{
-	// Enable interrupt
-	XGpio_InterruptEnable(&BTNInst, BTN_INT);
-	XGpio_InterruptGlobalEnable(&BTNInst);
-
-	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
-			 	 	 	 	 	 (Xil_ExceptionHandler)XScuGic_InterruptHandler,
-			 	 	 	 	 	 XScuGicInstancePtr);
-	Xil_ExceptionEnable();
 
 
-	return XST_SUCCESS;
 
-}
-
-int IntcInitFunction(u16 DeviceId, XTmrCtr *TmrInstancePtr, XGpio *GpioInstancePtr)
-{
-	XScuGic_Config *IntcConfig;
-	int status;
-
-	// Interrupt controller initialisation
-	IntcConfig = XScuGic_LookupConfig(DeviceId);
-	status = XScuGic_CfgInitialize(&INTCInst, IntcConfig, IntcConfig->CpuBaseAddress);
-	if(status != XST_SUCCESS) return XST_FAILURE;
-
-	// Call to interrupt setup
-	status = InterruptSystemSetup(&INTCInst);
-	if(status != XST_SUCCESS) return XST_FAILURE;
-
-	// Connect GPIO interrupt to handler
-	status = XScuGic_Connect(&INTCInst,
-					  	  	 INTC_GPIO_INTERRUPT_ID,
-					  	  	 (Xil_ExceptionHandler)BTN_Intr_Handler,
-					  	  	 (void *)GpioInstancePtr);
-	if(status != XST_SUCCESS) return XST_FAILURE;
-
-
-	// Connect timer interrupt to handler
-	status = XScuGic_Connect(&INTCInst,
-							 INTC_TMR_INTERRUPT_ID,
-							 (Xil_ExceptionHandler)TMR_Intr_Handler,
-							 (void *)TmrInstancePtr);
-	if(status != XST_SUCCESS) return XST_FAILURE;
-
-	// Enable GPIO interrupts interrupt
-	XGpio_InterruptEnable(GpioInstancePtr, 1);
-	XGpio_InterruptGlobalEnable(GpioInstancePtr);
-
-	// Enable GPIO and timer interrupts in the controller
-	XScuGic_Enable(&INTCInst, INTC_GPIO_INTERRUPT_ID);
-
-	XScuGic_Enable(&INTCInst, INTC_TMR_INTERRUPT_ID);
-
-
-	return XST_SUCCESS;
-}
-
-
-/*
- *   	while(1){
-  		renderVerticalBars(frameBuffer, screenWidth, screenHeight);
-
-
-//  		XTmrCtr_Start(&TimerInstancePtr,0);
-//  		while(TIMER_INTR_FLG == false){
-//  		}
-//
-//  		TIMER_INTR_FLG = false;
-//
-//  		if(loop == 0){
-//  			shiftBarsRight();
-//  			renderVerticalBars(frameBuffer, screenWidth, screenHeight);
-//  		}
-//  		else if(loop==1){
-//  			shiftBarsRight();
-//  			renderVerticalBars(frameBuffer, screenWidth, screenHeight);
-//  		}
-//  		else if(loop==2){
-//  			shiftBarsRight();
-//  			renderVerticalBars(frameBuffer, screenWidth, screenHeight);
-//  		}
-//  		else if(loop==3){
-//  			shiftBarsRight();
-//  			renderVerticalBars(frameBuffer, screenWidth, screenHeight);
-//  		}
-//  		else if(loop==4){
-//  			shiftBarsRight();
-//  			renderVerticalBars(frameBuffer, screenWidth, screenHeight);
-//  		}
-//  		loop++;
-//  		loop = loop % 5;
-  	}*/
