@@ -15,12 +15,23 @@
 #define ARM1_BASEADDR 0x10080000
 #define COMM_VAL (*(volatile unsigned long *)(0xFFFF0000))
 #define AUDIO_SAMPLE_CURRENT_MOMENT (*(volatile unsigned long *)(0xFFFF0001))
+#define AUDIO_SAMPLE_READY (*(volatile unsigned long *)(0xFFFF0028))
+#define RECORDING (*(volatile unsigned long *)(0xFFFF0010))
+#define PLAYING_R (*(volatile unsigned long *)(0xFFFF0014)) // CAn replace the play flag with this
+
+
 // dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list.data 0x018D2008
 // dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list_drum.data 0x020BB00C
 // dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list_snare.data 0x028A4010
 // dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list_clap.data 0x0308D014
 // dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list_kickhard.data 0x03876018
 // dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list_hihat.data 0x0328D014
+
+//dow -data C:\\Users\\sas40\\Desktop\\idlestone3\\smples\\left_list.data 0x018D2008
+//dow -data C:\\Users\\sas40\\Desktop\\idlestone3\\smples\\left_list_snare.data 0x028A4010
+//dow -data C:\\Users\\sas40\\Desktop\\idlestone3\\smples\\left_list_clap.data 0x0308D014
+//dow -data C:\\Users\\sas40\\Desktop\\idlestone3\\smples\\left_list_kickhard.data 0x03876018
+//dow -data C:\\Users\\sas40\\Desktop\\idlestone3\\smples\\left_list_hihat.data 0x0328D014
 
 // Need to make super long to work for some reason
 // So the "record seconds" and playback time isn't fully accurate
@@ -74,7 +85,9 @@ static int hihat_flag = 0;
 u32 delay_us = 476;
 
 // access in the core possibly
-int * song = (int *)0x018D2008;
+#define SONG_ADDR 0x018D2008
+volatile int *song = (volatile int *)SONG_ADDR;
+
 int NUM_SAMPLES = 1755840;
 int * drum = (int *)0x020BB00C;
 int NUM_SAMPLES_DRUM = 26880;
@@ -107,7 +120,12 @@ void BTN_Intr_Handler(void *InstancePtr) {
     btn_value = XGpio_DiscreteRead(&BTNInst, 1);
     swt_value = XGpio_DiscreteRead(&BTNInst, 2);
 
-    xil_printf("Switches values: %d", swt_value);
+//    xil_printf("Switches values: %d", swt_value);
+    if(swt_value > 128){
+    	swt_value = swt_value - 128;
+    } else {
+    	RECORDING = 0;
+    }
 
     if(swt_value == 1){
 		if (btn_value == 8) {
@@ -146,7 +164,27 @@ void BTN_Intr_Handler(void *InstancePtr) {
 			drum_flag = 1;
 			j=0;
 		}
+    } else if (swt_value >= 128){
+    	RECORDING = 1;
+    	// do same thing as base 0 no switchies
+    	if (btn_value == 8) {
+			// right button
+
+		} else if (btn_value == 4) {
+
+		} else if (btn_value == 16) {
+			delay_us = delay_us + 1;
+		} else if(btn_value == 2){
+			if (delay_us > 1){
+				delay_us = delay_us - 1;
+			}
+		} else if (btn_value == 1){
+			// Center button
+			play_flag = 1;
+
+		}
     } else {
+//    	RECORDING = 0;
     	// if switches 0, plays regular stuff
     	if (btn_value == 8) {
 			// right button
@@ -162,6 +200,7 @@ void BTN_Intr_Handler(void *InstancePtr) {
 		} else if (btn_value == 1){
 			// Center button
 			play_flag = 1;
+
 		}
     }
 
@@ -229,6 +268,7 @@ void record_audio() {
 void play_audio() {
     xil_printf("Playing sample from memory...\r\n");
     playing = 1;
+    PLAYING_R = 1;
     int i = 0;
 
     while (playing) {
@@ -262,10 +302,13 @@ void play_audio() {
 			j++;  // Move drum sample forward
 		}
 
+        AUDIO_SAMPLE_READY = 1;  // Flag to signal new data is ready
         // write to the global thing for like dual core connection
         AUDIO_SAMPLE_CURRENT_MOMENT = audio_sample;
         Xil_Out32(I2S_DATA_TX_L_REG, audio_sample);  // Send left channel
+        AUDIO_SAMPLE_READY = 0;  // Flag to signal new data is ready
         Xil_Out32(I2S_DATA_TX_R_REG, audio_sample);  // Send right channel
+
 
         i++; // Move to the next left sample for the next iteration
 
@@ -316,6 +359,8 @@ void play_audio() {
     clap_flag = 0;
     kickhard_flag = 0;
     hihat_flag = 0;
+    PLAYING_R = 0;
+
 }
 
 void play_drum() {

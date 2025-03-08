@@ -20,6 +20,18 @@
 
 #define COMM_VAL (*(volatile unsigned long *)(0xFFFF0000))
 #define AUDIO_SAMPLE_CURRENT_MOMENT (*(volatile unsigned long *)(0xFFFF0001))
+#define AUDIO_SAMPLE_READY (*(volatile unsigned long *)(0xFFFF0028))
+#define RECORDING (*(volatile unsigned long *)(0xFFFF0010))
+#define PLAYING_R (*(volatile unsigned long *)(0xFFFF0014))
+
+// access in the core possibly
+#define SONG_ADDR 0x018D2008
+#define NUM_SAMPLES 1755840
+
+volatile int *song = (volatile int *)SONG_ADDR;
+
+int recording_song[1755840]; // Temporary buffer to store recorded audio samples
+
 
 extern u32 MMUTable;
 
@@ -46,6 +58,8 @@ XTmrCtr TMRInst;
 static int led_data;
 static int btn_value;
 static int tmr_count;
+
+u32 delay_us = 476;
 
 
 int *frameBuffer = (int *)0x00900000;  // Example base address for framebuffer
@@ -82,45 +96,6 @@ void draw_pixel(int *frameBuffer, int x, int y, int screenWidth, int color) {
         frameBuffer[y * screenWidth + x] = color;
     }
 }
-
-//void draw_sine_wave(int *frameBuffer, int screenWidth, int screenHeight) {
-//    static float phase = 0.0;
-//
-//    // Read the latest audio value
-//    unsigned long audio_value = AUDIO_SAMPLE_CURRENT_MOMENT;
-//
-//    // Normalize and increase amplitude
-//    float amplitude = ((float)(audio_value & 0xFFF) / 19.0f) * 1.5f; // Increase amplitude
-//    amplitude = fminf(amplitude, (screenHeight / 2 ));  // Slightly less restrictive clamp
-//
-//    // Set frequency to a fixed value
-//    float frequency = 0.025f;
-//
-//    // Clear the framebuffer
-//    for (int i = 0; i < screenWidth * screenHeight; i++) {
-//        frameBuffer[i] = 0x7dff00;  // background
-//    }
-//
-//    // Draw the sine wave
-//    for (int x = 0; x < screenWidth; x++) {
-//        int y = (int)(screenHeight / 2 + amplitude * sinf(phase + x * frequency));
-//
-//        if (y >= 0 && y < screenHeight) {
-//        	for (int dx = -2; dx <= 2; dx++) {
-//        	    for (int dy = -2; dy <= 2; dy++) {
-//        	        if (dx * dx + dy * dy <= 4) {  // Circle-like shape
-//        	            int x_thick = x + dx;
-//        	            int y_thick = y + dy;
-//        	            if (x_thick >= 0 && x_thick < screenWidth && y_thick >= 0 && y_thick < screenHeight) {
-//        	                draw_pixel(frameBuffer, x_thick, y_thick, screenWidth, 0xFFFFFF);
-//        	            }
-//        	        }
-//        	    }
-//        	}
-//        }
-//    }
-//
-//}
 
 typedef struct {
     int background;
@@ -236,6 +211,35 @@ void TMR_Intr_Handler(void *data)
 	}
 }
 
+void record_audio() {
+	// start recording when RECORDING =1 and the play button has been pressed
+	// Save audio running to another buffer.
+	// After loop exits, either by playback ending, or user leaving early
+	// Save changes by copying contents of new buffer to song buffer to play
+	bool finished_flag = 0;
+	unsigned int index = 0;
+	while(RECORDING == 1 && PLAYING_R == 1){
+//		xil_printf("STARTING RECORDING...");
+		if (AUDIO_SAMPLE_READY) {  // Only read when data is ready
+			if (index < NUM_SAMPLES) {
+				recording_song[index] = AUDIO_SAMPLE_CURRENT_MOMENT / 50; // Normalize
+				index++;
+				finished_flag = 1;
+			}
+		}
+
+	}
+	// copying contents of new buffer to song buffer to play
+	if(finished_flag){
+		xil_printf("SAVING CHANGES... ");
+		for(int i = 0; i < NUM_SAMPLES; i++) {
+			song[i] = recording_song[i];  // Copy the recorded data to the song buffer
+		}
+		finished_flag = 0;
+	}
+}
+
+
 //----------------------------------------------------
 // MAIN FUNCTION
 //----------------------------------------------------
@@ -251,9 +255,11 @@ int main()
 
     while(1){
 
-    	if(COMM_VAL == 1){
-    		draw_sine_wave(frameBuffer, screenWidth, screenHeight);
-    		COMM_VAL = 0;
+    	unsigned int index = 0;
+    	if(RECORDING == 1){
+//    		draw_sine_wave(frameBuffer, screenWidth, screenHeight);
+    		xil_printf("RECORDING MODE");
+    		record_audio();
     	}
 
     	draw_sine_wave(frameBuffer, screenWidth, screenHeight);
@@ -263,7 +269,6 @@ int main()
     cleanup_platform();
     return 0;
 }
-
 
 
 
