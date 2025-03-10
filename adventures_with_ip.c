@@ -12,15 +12,16 @@
 #define DEBOUNCE_DELAY 1000
 #define sev() __asm__("sev")
 #define ARM1_STARTADR 0xFFFFFFF0
-#define ARM1_BASEADDR 0x10080000
+//#define ARM1_BASEADDR 0x10080000
+#define ARM1_BASEADDR 0x00100000
 #define COMM_VAL (*(volatile unsigned long *)(0xFFFF0000))
 #define AUDIO_SAMPLE_CURRENT_MOMENT (*(volatile unsigned long *)(0xFFFF0001))
 
 // MILESTONE 3 COMMUNICATION VARS FOR SCREEN
 #define RIGHT_FLAG (*(volatile unsigned long *)(0xFFFF0008))
-#define CENTER_FLAG (*(volatile unsigned long *)(0xFFFF0012))
-#define RECORD_FLAG (*(volatile unsigned long *)(0xFFFF0016))
-#define SAMPLE_FLAG (*(volatile unsigned long *)(0xFFFF0032))
+#define CENTER_FLAG (*(volatile unsigned long *)(0xFFFF1012))
+#define DOWN_FLAG (*(volatile unsigned long *)(0xFFFF2016))
+#define UP_FLAG (*(volatile unsigned long *)(0xFFFF3032))
 
 // dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list.data 0x018D2008
 // dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list_drum.data 0x020BB00C
@@ -131,12 +132,13 @@ void BTN_Intr_Handler(void *InstancePtr) {
 		// right button
 		RIGHT_FLAG = 1;
 	} else if (btn_value == 4) {
-		RECORD_FLAG = 1;
+		//RECORD_FLAG = 1;
 	} else if (btn_value == 16) {
-		SAMPLE_FLAG = 1;
+		UP_FLAG = 1;
 	} else if(btn_value == 2){
-		//DOWN_FLAG = 1;
+		DOWN_FLAG = 1;
 	} else if (btn_value == 1){
+		xil_printf("center button pressed.\r\n");
 		// Center button
 		CENTER_FLAG = 1;
 	}
