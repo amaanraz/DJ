@@ -27,10 +27,16 @@
 #define DOWN_FLAG (*(volatile unsigned long *)(0xFFFF2016))
 #define UP_FLAG (*(volatile unsigned long *)(0xFFFF3032))
 
-// dow -data C:/Users/tmm12/Desktop/sources/images/Homepage.data 0x018D2012
-int * homepage = (int *)0x018D2012;
+// source C:/Users/tmm12/Desktop/sources/script/load_data.tcl
+int * homepageDJ = (int *)0x018D2012;
+int * homepageRecord = (int *)0x088D2012;
+int * homepageSample = (int *)0x028DD00C;
+int * dj = (int *)0x060BB00C;
 int * recording = (int *)0x020BB00C;
-int * sample = (int *)0x048BB00C;
+int * sample1 = (int *)0x044CB00C;
+int * sample2 = (int *)0x072BB00C;
+int * sample3 = (int *)0x094DB00C;
+int * sampleBack = (int *)0x034D2012;
 
 // Milestone 3 flags
 static int home_flag = 1;
@@ -93,8 +99,6 @@ int square_color = 0x00FF0000;  // Red
 // - called by the timer, button interrupt, performs
 // - LED flashing
 //----------------------------------------------------
-
-
 void clearScreen(int *frameBuffer, int screenWidth, int screenHeight)
 {
     for (int y = 0; y < screenHeight; y++) {
@@ -175,8 +179,6 @@ void draw_sine_wave(int *frameBuffer, int screenWidth, int screenHeight) {
 		frame_counter++;  // Increment frame counter
 	}
 
-
-
     // Set background color
     int backgroundColor = colorThemes[current_theme_index].background;
     int waveColor = colorThemes[current_theme_index].wave;
@@ -185,7 +187,6 @@ void draw_sine_wave(int *frameBuffer, int screenWidth, int screenHeight) {
     for (int i = 0; i < screenWidth * screenHeight; i++) {
         frameBuffer[i] = backgroundColor;
     }
-
 
     //  Draw the sine wave
     for (int x = 0; x < screenWidth; x++) {
@@ -235,7 +236,6 @@ void TMR_Intr_Handler(void *data)
 			XGpio_DiscreteWrite(&LEDInst, 1, led_data);
 			XTmrCtr_Reset(&TMRInst,0);
 			XTmrCtr_Start(&TMRInst,0);
-
 		}
 		else tmr_count++;
 	}
@@ -244,7 +244,9 @@ void TMR_Intr_Handler(void *data)
 //----------------------------------------------------
 // MAIN FUNCTION
 //----------------------------------------------------
-
+// put in images
+// counter if statements <0 and >2 or whatever
+//
 int main()
 {
     init_platform();
@@ -264,59 +266,79 @@ int main()
     int counter = 0;
     int sampleCounter = 0;
     while(1){
-//    	Xil_DCacheFlush();
+    	// Xil_DCacheFlush();
     	// Start at home page with box on DJ
     	if (home_flag == 1) {
     		xil_printf("On home page...\r\n");
-    		loadImage(frameBuffer, screenWidth, screenHeight, homepage);
+    		if (counter == 0) {
+				loadImage(frameBuffer, screenWidth, screenHeight, homepageDJ);
+			}
+			if (counter == 1) {
+				loadImage(frameBuffer, screenWidth, screenHeight, homepageRecord);
+			}
+			if (counter == 2) {
+				loadImage(frameBuffer, screenWidth, screenHeight, homepageSample);
+			}
         	// Draw rectangle on DJ
         	// If middle pressed and counter = 0, go to DJ mode (and load sine wave)
     		if (CENTER_FLAG == 1 && counter == 0) {
     			home_flag = 0;
     			dj_flag = 1;
+        		loadImage(frameBuffer, screenWidth, screenHeight, dj);
     			CENTER_FLAG = 0;
     			Xil_DCacheFlush();
     		}
-    		// If down pressed, draw rectangle on Record and clear rectangle on DJ and set counter = 1
-    		if (DOWN_FLAG == 1) {
-				counter++;
-				xil_printf("Counter value: %d\r\n", counter);
-				DOWN_FLAG=0;
-				// Put rectangle corresponding box
-			}
-    		if (UP_FLAG == 1) {
-				counter--;
-				xil_printf("Counter value: %d\r\n", counter);
-				UP_FLAG=0;
-				// Put rectangle on corresponding box
-			}
     		// If middle pressed and counter = 1, go to Record mode (set record flag to 1 and home flag to 0)
-    		if (CENTER_FLAG == 1 && counter == 1) {
+    		else if (CENTER_FLAG == 1 && counter == 1) {
 				home_flag = 0;
 				record_flag = 1;
 				CENTER_FLAG = 0;
 				Xil_DCacheFlush();
 			}
-
-    		// If down pressed, draw rectangle on select sample and clear rectangle on record and set counter = 1
-    		// If middle pressed and counter = 2, go to Select Sample mode
-    		if (CENTER_FLAG == 1 && counter == 2) {
+			// If middle pressed and counter = 2, go to Select Sample mode
+    		else if (CENTER_FLAG == 1 && counter == 2) {
 				home_flag = 0;
 				sample_sel_flag = 1;
 				CENTER_FLAG = 0;
 				Xil_DCacheFlush();
 			}
+    		// If down pressed, draw rectangle on Record and clear rectangle on DJ and set counter = 1
+    		if (DOWN_FLAG == 1) {
+				counter++;
+				xil_printf("Counter value: %d\r\n", counter);
+
+				if(counter > 2) {
+					counter = 0;
+				}
+				DOWN_FLAG=0;
+			}
+    		if (UP_FLAG == 1) {
+				counter--;
+				xil_printf("Counter value: %d\r\n", counter);
+
+				if (counter < 0) {
+					counter = 2;
+				}
+				UP_FLAG=0;
+			}
+
+
+
     	} else if (dj_flag == 1) {
+    		//clearScreen(*frameBuffer, screenWidth, screenHeight);
     		// Draw sine wave
     		xil_printf("Drawing Sine Wave!\r\n");
-    		draw_sine_wave(frameBuffer, screenWidth, screenHeight-200);
+    		draw_sine_wave(frameBuffer, screenWidth, screenHeight-215);
     		Xil_DCacheFlush();
 
+    		// Switches stuff for sound effects here
+
     		// To go to home page: if RIGHT_FLAG = 1, set home_flag = 1 and dj_flag = 0
-    		if (RIGHT_FLAG == 1) {
+    		if (CENTER_FLAG == 1) {
     			dj_flag = 0;
     			home_flag = 1;
-    			RIGHT_FLAG = 0;
+    			CENTER_FLAG = 0;
+    			Xil_DCacheFlush();
     		}
     	} else if (record_flag == 1) {
     		// NEED TO HAVE PAGES THAT CORRESPONDING TO SOUNDS FOR EACH SWITCH VAL
@@ -332,107 +354,65 @@ int main()
     	} else if (sample_sel_flag == 1) {
     		// 3 flags for each sample and same thing if center pressed go to that sample etc blah
     		xil_printf("In sample select mode...\r\n");
-    		loadImage(frameBuffer, screenWidth, screenHeight, sample);
-    		// Down & Up buttons
-    		if (DOWN_FLAG == 1) {
-				sampleCounter++;
-				xil_printf("Sample counter value: %d\r\n", sampleCounter);
-				DOWN_FLAG=0;
-				// Put rectangle corresponding box
-			}
-			if (UP_FLAG == 1) {
-				sampleCounter--;
-				xil_printf("Sample counter value: %d\r\n", sampleCounter);
-				UP_FLAG=0;
-				// Put rectangle on corresponding box
-			}
-			// Selected sample
-    		if (CENTER_FLAG == 1 && sampleCounter == 0) {
-    			xil_printf("Sample %d selected.\r\n", sampleCounter+1);
-    			sample1_flag = 1;
-    			sample2_flag = 0;
-    			sample3_flag = 0;
+    		// Selected sample
+			if (CENTER_FLAG == 1 && sampleCounter == 0) {
+				xil_printf("Sample %d selected.\r\n", sampleCounter+1);
+				sample1_flag = 1;
+				sample2_flag = 0;
+				sample3_flag = 0;
 				CENTER_FLAG = 0;
 				Xil_DCacheFlush();
 			} else if (CENTER_FLAG == 1 && sampleCounter == 1) {
 				xil_printf("Sample %d selected.\r\n", sampleCounter+1);
-    			sample1_flag = 0;
-    			sample2_flag = 1;
-    			sample3_flag = 0;
+				sample1_flag = 0;
+				sample2_flag = 1;
+				sample3_flag = 0;
 				CENTER_FLAG = 0;
 				Xil_DCacheFlush();
 			} else if (CENTER_FLAG == 1 && sampleCounter == 2) {
 				xil_printf("Sample %d selected.\r\n", sampleCounter+1);
-    			sample1_flag = 0;
-    			sample2_flag = 0;
-    			sample3_flag = 1;
+				sample1_flag = 0;
+				sample2_flag = 0;
+				sample3_flag = 1;
 				CENTER_FLAG = 0;
 				Xil_DCacheFlush();
-			}
-
-    		// To go to home page: if RIGHT_FLAG = 1, set home_flag = 1 and sample_sel_flag = 0
-    		if (RIGHT_FLAG == 1) {
+			} else if (CENTER_FLAG == 1 && sampleCounter == 3) {
+				// return to home screen
 				sample_sel_flag = 0;
 				home_flag = 1;
-				RIGHT_FLAG = 0;
+				CENTER_FLAG = 0;
+			}
+
+			if (sampleCounter == 0) {
+				loadImage(frameBuffer, screenWidth, screenHeight, sample1);
+			}
+    		if (sampleCounter == 1) {
+    			loadImage(frameBuffer, screenWidth, screenHeight, sample2);
+    		}
+    		if (sampleCounter == 2) {
+				loadImage(frameBuffer, screenWidth, screenHeight, sample3);
+			}
+    		if (sampleCounter == 3) {
+				loadImage(frameBuffer, screenWidth, screenHeight, sampleBack);
+			}
+    		// Down & Up buttons
+			if (DOWN_FLAG == 1) {
+				sampleCounter++;
+				xil_printf("Sample counter value: %d\r\n", sampleCounter);
+				if (sampleCounter > 3) {
+					sampleCounter = 0;
+				}
+				DOWN_FLAG=0;
+			}
+			if (UP_FLAG == 1) {
+				sampleCounter--;
+				xil_printf("Sample counter value: %d\r\n", sampleCounter);
+				if (sampleCounter < 0) {
+					sampleCounter = 3;
+				}
+				UP_FLAG=0;
 			}
     	}
-
-
-    	// ALL DA OLD STUFF
-//    	if (RIGHT_FLAG == 1) {
-//			xil_printf("Drawing Sine Wave!");
-//			draw_sine = 1;
-//			RIGHT_FLAG = 0;
-//	        draw_rect = 0;  // Turn off square when drawing sine wave
-//		}
-//		if (draw_sine == 1) {
-//			draw_sine_wave(frameBuffer, screenWidth, screenHeight);
-//		}
-//		if (CENTER_FLAG == 1) {
-//			draw_sine = 0;
-//			xil_printf("Loading Homepage Image...\r\n");
-//			//draw_rectangle(frameBuffer, screenWidth, screenHeight, square_x, square_y, square_width, square_height, square_color);
-//			//loadImage(frameBuffer, screenWidth, screenHeight, homepage);
-////			Xil_DCacheFlush();
-//			draw_rect = 1;
-//			for(int i = 0; i<100; i++) {
-//				draw_rectangle(frameBuffer, screenWidth, screenHeight, square_x, square_y, square_width, square_height, square_color);
-//			}
-//			Xil_DCacheFlush();
-//			break;
-//			}
-//		}
-//		CENTER_FLAG = 0;
-//		if (RECORD_FLAG == 1) {
-//			draw_sine = 0;
-//			xil_printf("Loading Recording Image...\n");
-//			loadImage(frameBuffer, screenWidth, screenHeight, recording);
-//			loadImage(frameBuffer, screenWidth, screenHeight, recording);
-//			draw_rect = 1;
-//			RECORD_FLAG = 0;
-//		}
-//    	if (SAMPLE_FLAG == 1) {
-//			draw_sine = 0;
-//			xil_printf("Loading Sample Image...\n");
-//			loadImage(frameBuffer, screenWidth, screenHeight, sample);
-//			loadImage(frameBuffer, screenWidth, screenHeight, sample);
-//			SAMPLE_FLAG = 0;  // Reset the flag after loading
-//		}
-
-//    	if(COMM_VAL == 1){
-//    		draw_sine_wave(frameBuffer, screenWidth, screenHeight);
-//    		COMM_VAL = 0;
-//    	}
-//
-//    	draw_sine_wave(frameBuffer, screenWidth, screenHeight);
-//    	if (draw_rect == 1) {
-//        	draw_sine = 0;
-//			draw_rectangle(frameBuffer, screenWidth, screenHeight, square_x, square_y, square_width, square_height, square_color);
-//			draw_rectangle(frameBuffer, screenWidth, screenHeight, square_x, square_y, square_width, square_height, square_color);
-//			draw_rect = 0;
-//		}
-
     }
 
     cleanup_platform();
