@@ -12,16 +12,21 @@
 #define DEBOUNCE_DELAY 1000
 #define sev() __asm__("sev")
 #define ARM1_STARTADR 0xFFFFFFF0
-//#define ARM1_BASEADDR 0x10080000
-#define ARM1_BASEADDR 0x00100000
+#define ARM1_BASEADDR 0x100000
 #define COMM_VAL (*(volatile unsigned long *)(0xFFFF0000))
 #define AUDIO_SAMPLE_CURRENT_MOMENT (*(volatile unsigned long *)(0xFFFF0001))
+#define AUDIO_SAMPLE_READY (*(volatile unsigned long *)(0xFFFF0028))
+#define RECORDING (*(volatile unsigned long *)(0xFFFF0010))
+#define PLAYING_R (*(volatile unsigned long *)(0xFFFF0014)) // CAn replace the play flag with this
 
-// MILESTONE 3 COMMUNICATION VARS FOR SCREEN
 #define RIGHT_FLAG (*(volatile unsigned long *)(0xFFFF0008))
 #define CENTER_FLAG (*(volatile unsigned long *)(0xFFFF1012))
 #define DOWN_FLAG (*(volatile unsigned long *)(0xFFFF2016))
 #define UP_FLAG (*(volatile unsigned long *)(0xFFFF3032))
+
+
+#define SWITCHES_ON (*(volatile unsigned long *)(0xFFFF4032))
+
 
 // dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list.data 0x018D2008
 // dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list_drum.data 0x020BB00C
@@ -29,8 +34,12 @@
 // dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list_clap.data 0x0308D014
 // dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list_kickhard.data 0x03876018
 // dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list_hihat.data 0x0328D014
-// ADD ACTUAL BASSDROP EFFECT
-// dow -data C:/Users/tmm12/Desktop/sources/audio_samples/left_list_bassdrop.data 0x0348D014
+
+//dow -data C:\\Users\\sas40\\Desktop\\idlestone3\\smples\\left_list.data 0x018D2008
+//dow -data C:\\Users\\sas40\\Desktop\\idlestone3\\smples\\left_list_snare.data 0x028A4010
+//dow -data C:\\Users\\sas40\\Desktop\\idlestone3\\smples\\left_list_clap.data 0x0308D014
+//dow -data C:\\Users\\sas40\\Desktop\\idlestone3\\smples\\left_list_kickhard.data 0x03876018
+//dow -data C:\\Users\\sas40\\Desktop\\idlestone3\\smples\\left_list_hihat.data 0x0328D014
 
 // Need to make super long to work for some reason
 // So the "record seconds" and playback time isn't fully accurate
@@ -80,19 +89,13 @@ static int snare_flag = 0;
 static int clap_flag = 0;
 static int kickhard_flag = 0;
 static int hihat_flag = 0;
-//static int bassdrop_flag = 0;
-
-// milestone 3 test
-//static int right_flag = 0;
-static int left_flag = 0;
-static int up_flag = 0;
-static int down_flag = 0;
-static int center_flag = 0;
 
 u32 delay_us = 476;
 
 // access in the core possibly
-int * song = (int *)0x018D2008;
+#define SONG_ADDR 0x01300000 // 0x00362008
+volatile int *song = (volatile int *)SONG_ADDR;
+
 int NUM_SAMPLES = 1755840;
 int * drum = (int *)0x020BB00C;
 int NUM_SAMPLES_DRUM = 26880;
@@ -100,12 +103,11 @@ int * snare = (int *)0x028A4010;
 int NUM_SAMPLES_SNARE = 32256;
 int * clap = (int *)0x0308D014;
 int NUM_SAMPLES_CLAP = 35712;
-int * kickhard = (int *)0x03876018;
+int * kickhard = (int *)0x0FFFFFFF;
 int NUM_SAMPLES_KICKHARD = 19584;
 int * hihat = (int *)0x0328D014;
 int NUM_SAMPLES_HIHAT = 48384;
-//int * bassdrop = (int *)0x0348D014;
-//int NUM_SAMPLES_BASSDROP = 774720;
+
 // u32 delay_us_drum = 60;
 
 //----------------------------------------------------
@@ -125,74 +127,107 @@ void BTN_Intr_Handler(void *InstancePtr) {
 
     btn_value = XGpio_DiscreteRead(&BTNInst, 1);
     swt_value = XGpio_DiscreteRead(&BTNInst, 2);
+    SWITCHES_ON = swt_value;
 
-    //xil_printf("Switches values: %d", swt_value);
-    // if switches 0, plays regular stuff
-	if (btn_value == 8) {
-		// right button
-		RIGHT_FLAG = 1;
-	} else if (btn_value == 4) {
-		//RECORD_FLAG = 1;
-	} else if (btn_value == 16) {
-		UP_FLAG = 1;
-	} else if(btn_value == 2){
-		DOWN_FLAG = 1;
-	} else if (btn_value == 1){
-		xil_printf("center button pressed.\r\n");
-		// Center button
-		CENTER_FLAG = 1;
-	}
+//    xil_printf("Switches values: %d", swt_value);
+    if(swt_value > 128){
+    	swt_value = swt_value - 128;
+    } else {
+    	RECORDING = 0;
+    }
 
-//    if(swt_value == 1){
-//		if (btn_value == 8) {
-//			// right button
-//			snare_flag = 1;
-//			j=0;
-//		} else if (btn_value == 4) {
-//	//      play_flag = 1;
-//			clap_flag=1;
-//			j=0;
-//		} else if (btn_value == 16) {
-//	//        delay_us = delay_us + 1;
-//	//        xil_printf("Delay (us): %d", delay_us);
-//			kickhard_flag = 1;
-//			j=0;
-//		} else if(btn_value == 2){
-//	//    	if (delay_us > 1){
-//	//    		delay_us = delay_us - 1;
-//	//    	}
-//	//        xil_printf("Delay (us): %d", delay_us);
-//			hihat_flag=1;
-//			j=0;
-//			usleep(4000);
-//		} else if (btn_value == 1){
-//			// Center button
-//			//COMM_VAL = 1;
-//			//drum_flag = 1;
-//			//bassdrop_flag=1;
-//			j=0;
-//		}
-//    } else {
-//    	// if switches 0, plays regular stuff
-//    	if (btn_value == 8) {
-//			// right button
-//			// Play/pause functionality
-//			 paused = !paused;  // Toggle paused directly
-//			 xil_printf("Audio %s.\r\n", paused ? "Paused" : "Resumed");
-//		} else if (btn_value == 4) {
-//			// Recording functionality
-//			// record_flag = 1;
-//		} else if (btn_value == 16) {
-//			delay_us = delay_us + 1;
-//		} else if(btn_value == 2){
-//			if (delay_us > 1){
-//				delay_us = delay_us - 1;
-//			}
-//		} else if (btn_value == 1){
-//			// Center button
-//			play_flag = 1;
-//		}
-//    }
+    if(swt_value == 2){
+		if (btn_value == 8) {
+			// right button
+			// Recording functionality
+			// record_flag = 1;
+
+			// Play/pause functionality
+			// paused = !paused;  // Toggle paused directly
+			// xil_printf("Audio %s.\r\n", paused ? "Paused" : "Resumed");
+
+			// Sound testing - have in separate buttons later once switches work
+			//drum_flag = 1;
+			snare_flag = 1;
+			j=0;
+		} else if (btn_value == 4) {
+	//      play_flag = 1;
+			clap_flag=1;
+			j=0;
+		} else if (btn_value == 16) {
+	//        delay_us = delay_us + 1;
+	//        xil_printf("Delay (us): %d", delay_us);
+			kickhard_flag = 1;
+			j=0;
+		} else if(btn_value == 2){
+	//    	if (delay_us > 1){
+	//    		delay_us = delay_us - 1;
+	//    	}
+	//        xil_printf("Delay (us): %d", delay_us);
+			hihat_flag=1;
+			j=0;
+			usleep(4000);
+		} else if (btn_value == 1){
+			// Center button
+			//COMM_VAL = 1;
+			drum_flag = 1;
+			j=0;
+		}
+    } else if (swt_value == 1){
+    	// if switches 1, plays regular stuff
+		if (btn_value == 8) {
+			// right button
+
+		} else if (btn_value == 4) {
+
+		} else if (btn_value == 16) {
+			delay_us = delay_us + 1;
+		} else if(btn_value == 2){
+			if (delay_us > 1){
+				delay_us = delay_us - 1;
+			}
+		} else if (btn_value == 1){
+			// Center button
+			play_flag = 1;
+
+		}
+    } else if (swt_value >= 128){
+    	RECORDING = 1;
+    	// do same thing as base 0 no switchies
+    	if (btn_value == 8) {
+			// right button
+
+		} else if (btn_value == 4) {
+
+		} else if (btn_value == 16) {
+			delay_us = delay_us + 1;
+		} else if(btn_value == 2){
+			if (delay_us > 1){
+				delay_us = delay_us - 1;
+			}
+		} else if (btn_value == 1){
+			// Center button
+			play_flag = 1;
+
+		}
+    } else {
+//    	RECORDING = 0;
+    	// if switches 0, plays regular stuff
+    	if (btn_value == 8) {
+    			// right button
+			RIGHT_FLAG = 1;
+		} else if (btn_value == 4) {
+			//RECORD_FLAG = 1;
+		} else if (btn_value == 16) {
+			UP_FLAG = 1;
+		} else if(btn_value == 2){
+			DOWN_FLAG = 1;
+		} else if (btn_value == 1){
+			xil_printf("center button pressed.\r\n");
+			// Center button
+			CENTER_FLAG = 1;
+		}
+    }
 
     (void)XGpio_InterruptClear(&BTNInst, BTN_INT);
     (void)XGpio_InterruptClear(&BTNInst, SWT_INT);
@@ -258,6 +293,7 @@ void record_audio() {
 void play_audio() {
     xil_printf("Playing sample from memory...\r\n");
     playing = 1;
+    PLAYING_R = 1;
     int i = 0;
 
     while (playing) {
@@ -290,15 +326,14 @@ void play_audio() {
 			audio_sample += hihat[j] * 100;  // Simple addition mixing
 			j++;  // Move drum sample forward
 		}
-//        if (bassdrop_flag && j < NUM_SAMPLES_BASSDROP) {
-//			audio_sample += bassdrop[j] * 100;  // Simple addition mixing
-//			j++;  // Move drum sample forward
-//		}
 
+        AUDIO_SAMPLE_READY = 1;  // Flag to signal new data is ready
         // write to the global thing for like dual core connection
         AUDIO_SAMPLE_CURRENT_MOMENT = audio_sample;
         Xil_Out32(I2S_DATA_TX_L_REG, audio_sample);  // Send left channel
+        AUDIO_SAMPLE_READY = 0;  // Flag to signal new data is ready
         Xil_Out32(I2S_DATA_TX_R_REG, audio_sample);  // Send right channel
+
 
         i++; // Move to the next left sample for the next iteration
 
@@ -340,11 +375,6 @@ void play_audio() {
 			hihat_flag = 0;
 //			j=0;
 		}
-
-//		if (j >= NUM_SAMPLES_BASSDROP) {
-//			hihat_flag = 0;
-////			j=0;
-//		}
     }
     xil_printf("Playback stopped.\r\n");
     AUDIO_SAMPLE_CURRENT_MOMENT = 0;
@@ -354,6 +384,8 @@ void play_audio() {
     clap_flag = 0;
     kickhard_flag = 0;
     hihat_flag = 0;
+    PLAYING_R = 0;
+
 }
 
 void play_drum() {
@@ -476,7 +508,6 @@ int main()
 {
     init_platform();
     COMM_VAL = 0;
-    RIGHT_FLAG = 0;
 
     // Disable cache on OCM
     // S=b1 TEX=b100 AP=b11, Domain=b1111, C=b0, B=b0
