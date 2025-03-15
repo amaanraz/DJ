@@ -93,7 +93,7 @@ static int hihat_flag = 0;
 u32 delay_us = 476;
 
 // access in the core possibly
-#define SONG_ADDR 0x00362008
+#define SONG_ADDR 0x01300000 // 0x00362008
 volatile int *song = (volatile int *)SONG_ADDR;
 
 int NUM_SAMPLES = 1755840;
@@ -103,7 +103,7 @@ int * snare = (int *)0x028A4010;
 int NUM_SAMPLES_SNARE = 32256;
 int * clap = (int *)0x0308D014;
 int NUM_SAMPLES_CLAP = 35712;
-int * kickhard = (int *)0x03876018;
+int * kickhard = (int *)0x0FFFFFFF;
 int NUM_SAMPLES_KICKHARD = 19584;
 int * hihat = (int *)0x0328D014;
 int NUM_SAMPLES_HIHAT = 48384;
@@ -133,7 +133,7 @@ void BTN_Intr_Handler(void *InstancePtr) {
     if(swt_value > 128){
     	swt_value = swt_value - 128;
     } else {
-    	RECORDING = 0;
+//    	RECORDING = 0;
     }
 
     if(swt_value == 2){

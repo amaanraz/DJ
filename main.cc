@@ -33,7 +33,7 @@
 #define SWITCHES_ON (*(volatile unsigned long *)(0xFFFF4032))
 
 // source C:/Users/tmm12/Desktop/sources/script/load_data.tcl
-int * homepageDJ = (int *)0x018D2012;
+int * homepageDJ = (int *)0x109F2012;
 int * homepageRecord = (int *)0x088D2012;
 int * homepageSample = (int *)0x028DD00C;
 int * dj = (int *)0x060BB00C;
@@ -41,7 +41,7 @@ int * recording = (int *)0x020BB00C;
 int * sample1 = (int *)0x044CB00C;
 int * sample2 = (int *)0x072BB00C;
 int * sample3 = (int *)0x094DB00C;
-int * sampleBack = (int *)0x034D2012;
+int * sampleBack = (int *)0x034D2012; //******************
 
 // Milestone 3 flags
 static int home_flag = 1;
@@ -53,7 +53,7 @@ static int sample2_flag = 0;
 static int sample3_flag = 0;
 
 // access in the core possibly
-#define SONG_ADDR 0x00362008
+#define SONG_ADDR 0x01300000
 #define NUM_SAMPLES 1755840
 
 volatile int *song = (volatile int *)SONG_ADDR;
@@ -274,6 +274,9 @@ void record_audio() {
 			song[i] = recording_song[i];  // Copy the recorded data to the song buffer
 		}
 		finished_flag = 0;
+
+		record_flag = 0;
+		home_flag = 1;
 	}
 }
 
@@ -376,13 +379,24 @@ int main()
         		// NEED TO HAVE PAGES THAT CORRESPONDING TO SOUNDS FOR EACH SWITCH VAL
         		xil_printf("In recording mode...\r\n");
         		loadImage(frameBuffer, screenWidth, screenHeight, recording);
+        		RECORDING = 1;
+        		while (!PLAYING_R){
+        			asm("NOP");
+        			xil_printf("WAiting for play");
 
-        		// To go to home page: if RIGHT_FLAG = 1, set home_flag = 1 and record_flag = 0
-    			if (RIGHT_FLAG == 1 && SWITCHES_ON == 0) {
-    				record_flag = 0;
-    				home_flag = 1;
-    				RIGHT_FLAG = 0;
-    			}
+        			if (RIGHT_FLAG == 1 && SWITCHES_ON == 0) {
+
+						record_flag = 0;
+						home_flag = 1;
+						RIGHT_FLAG = 0;
+						break;
+					}
+        		}
+
+        		record_audio();
+
+        		// maybe add another way to leave?
+
         	} else if (sample_sel_flag == 1) {
         		// 3 flags for each sample and same thing if center pressed go to that sample etc blah
         		xil_printf("In sample select mode...\r\n");
@@ -466,7 +480,6 @@ int main()
     cleanup_platform();
     return 0;
 }
-
 
 
 
