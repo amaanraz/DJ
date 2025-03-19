@@ -7,6 +7,8 @@
 #include "xil_printf.h"
 #include "xpseudo_asm.h"
 #include "xil_exception.h"
+#include <math.h>
+
 //#include <unistd.h>  // For usleep
 
 #define DEBOUNCE_DELAY 1000
@@ -23,6 +25,19 @@
 #define CENTER_FLAG (*(volatile unsigned long *)(0xFFFF1012))
 #define DOWN_FLAG (*(volatile unsigned long *)(0xFFFF2016))
 #define UP_FLAG (*(volatile unsigned long *)(0xFFFF3032))
+
+// Milestone 4
+#define REVERB_DELAY 4800 //7200//4800  // Delay in samples (~100ms at 48kHz)
+#define REVERB_DECAY 0.85  // Decay factor (adjust as needed)
+static int reverb_buffer[REVERB_DELAY];  // Circular buffer
+static int reverb_index = 0;
+
+#define TREMOLO_RATE 0.1f  // Rate at which the tremolo modulates (higher is faster)
+#define TREMOLO_DEPTH 0.8f  // Depth of the tremolo effect (0.0 to 1.0)
+#define TREMOLO_MAX 1000  // Maximum counter value for modulation
+static float tremolo_counter = 0.0f;  // Counter for tracking the modulation
+
+static float volume = 1.0;  // Current volume (starts at full volume)
 
 
 #define SWITCHES_ON (*(volatile unsigned long *)(0xFFFF4032))
@@ -89,8 +104,12 @@ static int snare_flag = 0;
 static int clap_flag = 0;
 static int kickhard_flag = 0;
 static int hihat_flag = 0;
-
+static int reverb_flag = 0;
+static int tremolo_flag = 0;
+static int skip_flag = 0;
+static int rewind_flag = 0;
 u32 delay_us = 476;
+u32 base = 476;
 
 // access in the core possibly
 #define SONG_ADDR 0x01300000 // 0x00362008
@@ -103,13 +122,14 @@ int * snare = (int *)0x028A4010;
 int NUM_SAMPLES_SNARE = 32256;
 int * clap = (int *)0x0308D014;
 int NUM_SAMPLES_CLAP = 35712;
-int * kickhard = (int *)0x0FFFFFFF;
+int * kickhard = (int *)0x0FFFFFC0;
 int NUM_SAMPLES_KICKHARD = 19584;
 int * hihat = (int *)0x0328D014;
 int NUM_SAMPLES_HIHAT = 48384;
 
-// u32 delay_us_drum = 60;
 
+// u32 delay_us_drum = 60;
+static int audio_sample = 0;
 //----------------------------------------------------
 // PROTOTYPE FUNCTIONS
 //----------------------------------------------------
@@ -134,6 +154,11 @@ void BTN_Intr_Handler(void *InstancePtr) {
     	swt_value = swt_value - 128;
     } else {
 //    	RECORDING = 0;
+    	skip_flag = 0;
+    	delay_us = base;
+    	if(swt_value != 64){
+    		rewind_flag = 0;
+    	}
     }
 
     if(swt_value == 2){
@@ -181,35 +206,50 @@ void BTN_Intr_Handler(void *InstancePtr) {
 		} else if (btn_value == 4) {
 
 		} else if (btn_value == 16) {
-			delay_us = delay_us + 1;
+			if(!skip_flag){
+				delay_us = delay_us + 1;
+			}
+
 		} else if(btn_value == 2){
 			if (delay_us > 1){
-				delay_us = delay_us - 1;
+				if(!skip_flag){
+					delay_us = delay_us - 1;
+				}
+
 			}
 		} else if (btn_value == 1){
 			// Center button
 			play_flag = 1;
 
 		}
-    } else if (swt_value >= 128){
-    	RECORDING = 1;
-    	// do same thing as base 0 no switchies
-    	if (btn_value == 8) {
+    } else if (swt_value == 3){ // MILESTONE 4 TAAIBAH ADDING AUDIO EFFECT IN SW
+    	// add @ least distortion and reverb
+		if (btn_value == 8) {
 			// right button
+			// distortion
 
 		} else if (btn_value == 4) {
+			// left button i think
+			// reverb
+			reverb_flag = !reverb_flag;
+			xil_printf("reberb: %d\n\r", reverb_flag);
 
 		} else if (btn_value == 16) {
-			delay_us = delay_us + 1;
+			// up button
+			xil_printf("up button\n\r");
 		} else if(btn_value == 2){
-			if (delay_us > 1){
-				delay_us = delay_us - 1;
-			}
+			// down button
+			xil_printf("down button.\n\r");
 		} else if (btn_value == 1){
 			// Center button
-			play_flag = 1;
-
+			tremolo_flag = !tremolo_flag;
+			xil_printf("tomato: %d\n\r", tremolo_flag);
 		}
+    } else if((swt_value == 64)) {
+    	rewind_flag = 1;
+    } else if (swt_value >= 128){
+    	skip_flag = 1;
+    	delay_us = delay_us / 2;
     } else {
 //    	RECORDING = 0;
     	// if switches 0, plays regular stuff
@@ -274,6 +314,36 @@ int IntcInitFunction(u16 DeviceId, XGpio *GpioInstancePtr) {
     return XST_SUCCESS;
 }
 
+
+int apply_tremolo(int sample) {
+//	tremolo_counter += TREMOLO_RATE;
+//	if (tremolo_counter >= TREMOLO_MAX) tremolo_counter = 0;
+//
+//	// The modulation factor oscillates between 1.0 (full volume) and (1 - TREMOLO_DEPTH)
+//	float modulation_factor = 1.0 - TREMOLO_DEPTH * (tremolo_counter / (float)TREMOLO_MAX);
+//	return (int)(sample * modulation_factor);
+
+	// Increase tremolo counter by the rate
+	tremolo_counter += TREMOLO_RATE;
+	if (tremolo_counter >= TREMOLO_MAX) {
+		tremolo_counter = 0.0f;  // Reset the counter when it exceeds maximum
+	}
+
+	// Modulation factor oscillates between 0 and 1 (Triangle wave behavior)
+	float modulation_factor = 1.0f - TREMOLO_DEPTH * fabs((tremolo_counter / TREMOLO_MAX) * 2.0f - 1.0f);
+
+	// Apply modulation to the sample
+	return (int)(sample * modulation_factor);
+}
+
+int apply_reverb(int sample) {
+    int delayed_sample = reverb_buffer[reverb_index];  // Get delayed sample
+    int new_sample = sample + (int)(delayed_sample * REVERB_DECAY);  // Apply decay
+    reverb_buffer[reverb_index] = sample;  // Store current sample for future use
+    reverb_index = (reverb_index + 1) % REVERB_DELAY;  // Loop buffer
+    return new_sample;
+}
+
 void record_audio() {
 
     xil_printf("Recording for %d seconds...\r\n", RECORD_SECONDS);
@@ -304,8 +374,15 @@ void play_audio() {
 
         // Milestone 2 stuff: Add drum sound here inside if statement
         // Then add drum effects at that point to the song indices
-        int audio_sample = song[i]*50;
+        //int audio_sample = song[i]*50;
+        audio_sample = song[i]*50;
 
+        if (tremolo_flag) {
+			audio_sample = apply_tremolo(audio_sample);
+		}
+		if (reverb_flag) {
+			audio_sample = apply_reverb(audio_sample);
+		}
         if (drum_flag && j < NUM_SAMPLES_DRUM) {
            audio_sample += drum[j] * 150;  // Simple addition mixing
         	 j++;  // Move drum sample forward
@@ -327,6 +404,7 @@ void play_audio() {
 			j++;  // Move drum sample forward
 		}
 
+
         AUDIO_SAMPLE_READY = 1;  // Flag to signal new data is ready
         // write to the global thing for like dual core connection
         AUDIO_SAMPLE_CURRENT_MOMENT = audio_sample;
@@ -335,8 +413,17 @@ void play_audio() {
         Xil_Out32(I2S_DATA_TX_R_REG, audio_sample);  // Send right channel
 
 
-        i++; // Move to the next left sample for the next iteration
+        if(!rewind_flag){
+        	i++; // Move to the next left sample for the next iteration
+        } else {
+        	if(i <= 0){
+        		i = 0;
+        	} else{
+        		i--;
+        	}
 
+
+        }
 		for(int d=0;d<delay_us;d++){
 			asm("NOP");
 		}
@@ -375,6 +462,9 @@ void play_audio() {
 			hihat_flag = 0;
 //			j=0;
 		}
+
+		//distortion_flag = 0;
+		//reverb_flag = 0;
     }
     xil_printf("Playback stopped.\r\n");
     AUDIO_SAMPLE_CURRENT_MOMENT = 0;
@@ -385,7 +475,8 @@ void play_audio() {
     kickhard_flag = 0;
     hihat_flag = 0;
     PLAYING_R = 0;
-
+    reverb_flag = 0;
+    tremolo_flag = 0;
 }
 
 void play_drum() {
