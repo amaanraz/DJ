@@ -40,7 +40,7 @@ int * dj = (int *)0x060BB00C;
 int * recording = (int *)0x020BB00C;
 int * sample1 = (int *)0x044CB00C;
 int * sample2 = (int *)0x072BB00C;
-int * sample3 = (int *)0x094DB00C;
+int * sample3 = (int *)0x093DB00C;
 int * sampleBack = (int *)0x034D2012; //******************
 
 // Milestone 3 flags
@@ -274,9 +274,62 @@ void record_audio() {
 			song[i] = recording_song[i];  // Copy the recorded data to the song buffer
 		}
 		finished_flag = 0;
+
+		record_flag = 0;
+		home_flag = 1;
 	}
 }
 
+//REMOVE MAYBE IF NOT WORK
+//#include <iostream>
+//
+//// Define a font array for 128 characters (ASCII range 0-127)
+//static const unsigned char font[128][7] = {
+//    {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, // Null character (ASCII 0)
+//    {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, // Other characters
+//    // Example for 'A' (ASCII 65)
+//    {0x1E, 0x05, 0x05, 0x1E, 0x00, 0x00, 0x00},  // 'A' (65)
+//    {0x1F, 0x15, 0x15, 0x0A, 0x00, 0x00, 0x00},  // 'B' (66)
+//    {0x0E, 0x11, 0x11, 0x0A, 0x00, 0x00, 0x00},  // 'C' (67)
+//    // Add more characters here
+//    // For example, for 'Z' (ASCII 90)
+//    {0x1F, 0x01, 0x01, 0x1F, 0x00, 0x00, 0x00},  // 'Z' (90)
+//    // Complete the array for all characters as needed...
+//};
+//
+//// Function to draw a simple character (using a pixel grid representation)
+//void draw_character(int *frameBuffer, int x, int y, int screenWidth, char character, int color) {
+//    // Ensure the character is within the ASCII range (0-127)
+//    if (character < 0 || character > 127) return;
+//
+//    // Loop through the 5x7 font data for each character
+//    for (int row = 0; row < 7; row++) {
+//        for (int col = 0; col < 5; col++) {
+//            if (font[(int)character][row] & (1 << (4 - col))) {
+//                draw_pixel(frameBuffer, x + col, y + row, screenWidth, color);
+//            }
+//        }
+//    }
+//}
+//
+//void draw_text(int *frameBuffer, int screenWidth, int screenHeight, const char *text, int color) {
+//    int char_width = 8;   // Width of each character
+//    int char_height = 12; // Height of each character
+//    int padding = 10;     // Padding from the right edge
+//
+//    // Determine the starting x position for right-aligned text
+//    int text_length = 0;
+//    while (text[text_length] != '\0') {
+//        text_length++;
+//    }
+//    int x = screenWidth - (text_length * char_width) - padding;
+//    int y = screenHeight - char_height - padding; // Place near bottom-right
+//
+//    // Loop through each character in the text
+//    for (int i = 0; i < text_length; i++) {
+//        draw_character(frameBuffer, x + (i * char_width), y, screenWidth, text[i], color);
+//    }
+//}
 
 //----------------------------------------------------
 // MAIN FUNCTION
@@ -308,6 +361,10 @@ int main()
     			}
     			if (counter == 1) {
     				loadImage(frameBuffer, screenWidth, screenHeight, homepageRecord);
+//    				draw_text(frameBuffer, screenWidth/2, screenHeight/2, "AAA", 0xFFFFFF);
+//    				draw_text(frameBuffer, screenWidth/2, screenHeight/2, "AAA", 0xFFFFFF);
+
+
     			}
     			if (counter == 2) {
     				loadImage(frameBuffer, screenWidth, screenHeight, homepageSample);
@@ -359,7 +416,7 @@ int main()
         	} else if (dj_flag == 1) {
         		//clearScreen(*frameBuffer, screenWidth, screenHeight);
         		// Draw sine wave
-        		xil_printf("Drawing Sine Wave!\r\n");
+        		//xil_printf("Drawing Sine Wave!\r\n");
         		draw_sine_wave(frameBuffer, screenWidth, screenHeight-215);
         		Xil_DCacheFlush();
 
@@ -379,17 +436,21 @@ int main()
         		RECORDING = 1;
         		while (!PLAYING_R){
         			asm("NOP");
-        			record_audio();
+        			xil_printf("WAiting for play");
+
+        			if (RIGHT_FLAG == 1 && SWITCHES_ON == 0) {
+
+						record_flag = 0;
+						home_flag = 1;
+						RIGHT_FLAG = 0;
+						break;
+					}
         		}
 
         		record_audio();
 
-        		// To go to home page: if RIGHT_FLAG = 1, set home_flag = 1 and record_flag = 0
-    			if (RIGHT_FLAG == 1 && SWITCHES_ON == 0) {
-    				record_flag = 0;
-    				home_flag = 1;
-    				RIGHT_FLAG = 0;
-    			}
+        		// maybe add another way to leave?
+
         	} else if (sample_sel_flag == 1) {
         		// 3 flags for each sample and same thing if center pressed go to that sample etc blah
         		xil_printf("In sample select mode...\r\n");
@@ -457,22 +518,10 @@ int main()
         	}
         }
 
-//    while(1){
-//
-//    	unsigned int index = 0;
-//    	if(RECORDING == 1){
-////    		draw_sine_wave(frameBuffer, screenWidth, screenHeight);
-//    		xil_printf("RECORDING MODE");
-//    		record_audio();
-//    	}
-//
-//    	draw_sine_wave(frameBuffer, screenWidth, screenHeight);
-//
-//    }
+
 
     cleanup_platform();
     return 0;
 }
-
 
 
