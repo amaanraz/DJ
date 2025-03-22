@@ -15,7 +15,7 @@
 #define sev() __asm__("sev")
 #define ARM1_STARTADR 0xFFFFFFF0
 #define ARM1_BASEADDR 0x100000
-#define COMM_VAL (*(volatile unsigned long *)(0xFFFF0000))
+#define COMM_VAL (*(volatile unsigned long *)(0x020BB00C))
 #define AUDIO_SAMPLE_CURRENT_MOMENT (*(volatile unsigned long *)(0xFFFF0001))
 #define AUDIO_SAMPLE_READY (*(volatile unsigned long *)(0xFFFF0028))
 #define RECORDING (*(volatile unsigned long *)(0xFFFF0010))
@@ -63,6 +63,7 @@ static float volume = 1.0;  // Current volume (starts at full volume)
 #define MAX_SAMPLES (SAMPLES_PER_SECOND * RECORD_SECONDS * 15)
 int NUM_BYTES_BUFFER = 5242880;
 int j = 0; // for sound reset
+
 
 #include "xscugic.h"
 #include "xil_exception.h"
@@ -365,6 +366,7 @@ void play_audio() {
     playing = 1;
     PLAYING_R = 1;
     int i = 0;
+    COMM_VAL = 0;
 
     while (playing) {
         while (paused) {
@@ -421,9 +423,9 @@ void play_audio() {
         	} else{
         		i--;
         	}
-
-
         }
+
+        COMM_VAL = i;
 		for(int d=0;d<delay_us;d++){
 			asm("NOP");
 		}
@@ -433,6 +435,7 @@ void play_audio() {
  			// xil_printf("Looping\n");
  			// i = 0;  // Reset index to loop through samples
 			// To exit
+			COMM_VAL = 0;
 			playing = 0;
 		}
 
@@ -598,7 +601,7 @@ void menu() {
 int main()
 {
     init_platform();
-    COMM_VAL = 0;
+
 
     // Disable cache on OCM
     // S=b1 TEX=b100 AP=b11, Domain=b1111, C=b0, B=b0

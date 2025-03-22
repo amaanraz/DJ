@@ -18,7 +18,7 @@
 #include <stdlib.h>
 #include <time.h>    // For timing
 
-#define COMM_VAL (*(volatile unsigned long *)(0xFFFF0000))
+#define COMM_VAL (*(volatile unsigned long *)(0x020BB00C))
 #define AUDIO_SAMPLE_CURRENT_MOMENT (*(volatile unsigned long *)(0xFFFF0001))
 #define AUDIO_SAMPLE_READY (*(volatile unsigned long *)(0xFFFF0028))
 #define RECORDING (*(volatile unsigned long *)(0xFFFF0010))
@@ -182,7 +182,7 @@ void draw_sine_wave(int *frameBuffer, int screenWidth, int screenHeight) {
 
 
     // Set background color
-    int backgroundColor = colorThemes[current_theme_index].background;
+   int backgroundColor = colorThemes[current_theme_index].background;
    int waveColor = colorThemes[current_theme_index].wave;
 
     // Clear framebuffer with new background color
@@ -280,6 +280,38 @@ void record_audio() {
 	}
 }
 
+void draw_background_progress(int screenWidth, int screenHeight){
+	int barWidth = screenWidth - 40;
+	int barHeight = 10;  // Thin progress bar
+	int barX = 20;  // Start X position
+	int barY = screenHeight - 30;  // Position near the bottom
+	// Draw the background of the progress bar (Gray)
+	for (int x = 0; x < barWidth; x++) {
+		for (int y = 0; y < barHeight; y++) {
+			draw_pixel(frameBuffer, barX + x, barY + y, screenWidth, 0x555555);
+		}
+	}
+}
+
+void draw_progress_bar(int *frameBuffer, int screenWidth, int screenHeight, int i) {
+    int barWidth = screenWidth - 40;  // Leave some padding on the sides
+    int barHeight = 10;  // Thin progress bar
+    int barX = 20;  // Start X position
+    int barY = screenHeight - 30;  // Position near the bottom
+
+    // Calculate progress based on the current sample index
+    float progress = (float)i / NUM_SAMPLES;
+    int progressWidth = (int)(progress * barWidth);  // Width of the filled part
+
+
+    // Draw the filled progress (Blue)
+    for (int x = 0; x < progressWidth; x++) {
+        for (int y = 0; y < barHeight; y++) {
+            draw_pixel(frameBuffer, barX + x, barY + y, screenWidth, 0x0000FF);
+        }
+    }
+}
+
 //REMOVE MAYBE IF NOT WORK
 //#include <iostream>
 //
@@ -361,8 +393,8 @@ int main()
     			}
     			if (counter == 1) {
     				loadImage(frameBuffer, screenWidth, screenHeight, homepageRecord);
-    				draw_text(frameBuffer, screenWidth/2, screenHeight/2, "AAA", 0xFFFFFF);
-    				draw_text(frameBuffer, screenWidth/2, screenHeight/2, "AAA", 0xFFFFFF);
+//    				draw_text(frameBuffer, screenWidth/2, screenHeight/2, "AAA", 0xFFFFFF);
+//    				draw_text(frameBuffer, screenWidth/2, screenHeight/2, "AAA", 0xFFFFFF);
 
 
     			}
@@ -376,6 +408,8 @@ int main()
 						home_flag = 0;
 						dj_flag = 1;
 						loadImage(frameBuffer, screenWidth, screenHeight, dj);
+						draw_background_progress(screenWidth, screenHeight-205);
+						draw_background_progress(screenWidth, screenHeight-205);
 						CENTER_FLAG = 0;
 						Xil_DCacheFlush();
 					}
@@ -418,6 +452,7 @@ int main()
         		// Draw sine wave
         		//xil_printf("Drawing Sine Wave!\r\n");
         		draw_sine_wave(frameBuffer, screenWidth, screenHeight-215);
+        		draw_progress_bar(frameBuffer, screenWidth, screenHeight-205, COMM_VAL);
         		Xil_DCacheFlush();
 
         		// Switches stuff for sound effects here
@@ -534,6 +569,5 @@ int main()
     cleanup_platform();
     return 0;
 }
-
 
 
