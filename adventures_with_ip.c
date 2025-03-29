@@ -37,6 +37,19 @@ static int reverb_index = 0;
 #define TREMOLO_MAX 1000  // Maximum counter value for modulation
 static float tremolo_counter = 0.0f;  // Counter for tracking the modulation
 
+#define DISTORTION_GAIN 3.0f   // Increased for more impact
+#define DISTORTION_THRESHOLD 22000  // Slightly higher clipping point
+static int prev_sample = 0;
+#define SMOOTHING_FACTOR 0.9f  // Higher value = smoother sound
+
+#define FLANGER_DELAY 1200  // Max delay in samples (~25ms at 48kHz)
+#define FLANGER_DEPTH 500    // How much the delay modulates (smaller = subtler effect)
+#define FLANGER_RATE 1       // Controls how fast the effect oscillates
+static int flanger_buffer[FLANGER_DELAY];  // Delay buffer
+static int flanger_index = 0;
+static int flanger_lfo = 0;  // Triangle wave LFO
+static int lfo_direction = 1; // Controls up/down movement
+
 #define SAMPLES_PER_SECOND 48000
 #define RECORD_SECONDS 35
 #define MAX_SAMPLES (SAMPLES_PER_SECOND * RECORD_SECONDS * 15)
@@ -82,6 +95,7 @@ static int kickhard_flag = 0;
 static int hihat_flag = 0;
 static int reverb_flag = 0;
 static int tremolo_flag = 0;
+static int pitch_shift_flag = 0;
 static int skip_flag = 0;
 static int rewind_flag = 0;
 u32 delay_us = 476;
@@ -89,7 +103,7 @@ u32 base = 476;
 
 #define SONG_ADDR 0x01300000
 volatile int *song = (volatile int *)SONG_ADDR;
-int NUM_SAMPLES = 835584;//1755840;
+int NUM_SAMPLES = 1755840;//835584;
 int * drum = (int *)0x020BB00C;
 int NUM_SAMPLES_DRUM = 26880;
 int * snare = (int *)0x028A4010;
@@ -185,6 +199,8 @@ void BTN_Intr_Handler(void *InstancePtr) {
 			xil_printf("up button\n\r");
 		} else if(btn_value == 2){
 			// down button
+			pitch_shift_flag = !pitch_shift_flag;
+			xil_printf("ptchshft: %d\n\r", pitch_shift_flag);
 			xil_printf("down button.\n\r");
 		} else if (btn_value == 1){
 			// Center button
@@ -280,6 +296,51 @@ int apply_reverb(int sample) {
     return new_sample;
 }
 
+// Approximate tanh() function for smooth soft clipping
+int soft_clip(int sample) {
+    if (sample > DISTORTION_THRESHOLD) {
+        return DISTORTION_THRESHOLD + (sample - DISTORTION_THRESHOLD) / 5; // Smoother transition
+    }
+    if (sample < -DISTORTION_THRESHOLD) {
+        return -DISTORTION_THRESHOLD + (sample + DISTORTION_THRESHOLD) / 5;
+    }
+    return sample;
+}
+
+float fraction_part(float x) {
+    return x - (int)x;
+}
+
+int apply_distortion(int sample) {
+    sample *= DISTORTION_GAIN;
+    sample = soft_clip(sample);  // Apply soft clipping
+
+    // Apply low-pass filter to reduce harsh noise
+    int smoothed_sample = (int)((1.0f - SMOOTHING_FACTOR) * sample + SMOOTHING_FACTOR * prev_sample);
+    prev_sample = smoothed_sample;
+
+    return smoothed_sample;
+}
+
+int apply_flanger(int sample) {
+    // Triangle LFO
+    flanger_lfo += FLANGER_RATE * lfo_direction;
+    if (flanger_lfo >= FLANGER_DEPTH || flanger_lfo <= 0) {
+        lfo_direction = -lfo_direction;  // Change direction
+    }
+
+    int delay_offset = flanger_lfo;  // Use LFO value as delay time
+    int delayed_index = (flanger_index - delay_offset + FLANGER_DELAY) % FLANGER_DELAY;
+    int delayed_sample = flanger_buffer[delayed_index];
+
+    int new_sample = (sample + delayed_sample) / 2;  // Mix original with delayed signal
+
+    flanger_buffer[flanger_index] = sample;  // Store current sample in buffer
+    flanger_index = (flanger_index + 1) % FLANGER_DELAY;  // Loop buffer
+
+    return new_sample;
+}
+
 void record_audio() {
 
     xil_printf("Recording for %d seconds...\r\n", RECORD_SECONDS);
@@ -315,6 +376,10 @@ void play_audio() {
 		}
 		if (reverb_flag) {
 			audio_sample = apply_reverb(audio_sample);
+		}
+		if (pitch_shift_flag) {
+			//audio_sample = apply_distortion(audio_sample);
+			audio_sample = apply_flanger(audio_sample);
 		}
         if (drum_flag && j < NUM_SAMPLES_DRUM) {
            audio_sample += drum[j] * 150;  // simple addition mixing
