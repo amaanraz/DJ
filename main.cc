@@ -16,52 +16,15 @@
 #include "xil_exception.h"
 #include "math.h"
 #include <stdlib.h>
-#include <time.h>    // For timing
+#include <time.h>
 
-#define COMM_VAL (*(volatile unsigned long *)(0xFFFF0000))
+// source C:/Users/tmm12/Desktop/sources/script/load_data.tcl
+
+#define COMM_VAL (*(volatile unsigned long *)(0x020BB00C))
 #define AUDIO_SAMPLE_CURRENT_MOMENT (*(volatile unsigned long *)(0xFFFF0001))
 #define AUDIO_SAMPLE_READY (*(volatile unsigned long *)(0xFFFF0028))
 #define RECORDING (*(volatile unsigned long *)(0xFFFF0010))
 #define PLAYING_R (*(volatile unsigned long *)(0xFFFF0014))
-
-// MILESTONE 3 COMMUNICATION VARS FOR SCREEN
-#define RIGHT_FLAG (*(volatile unsigned long *)(0xFFFF0008))
-#define CENTER_FLAG (*(volatile unsigned long *)(0xFFFF1012))
-#define DOWN_FLAG (*(volatile unsigned long *)(0xFFFF2016))
-#define UP_FLAG (*(volatile unsigned long *)(0xFFFF3032))
-
-#define SWITCHES_ON (*(volatile unsigned long *)(0xFFFF4032))
-
-// source C:/Users/tmm12/Desktop/sources/script/load_data.tcl
-int * homepageDJ = (int *)0x109F2012;
-int * homepageRecord = (int *)0x088D2012;
-int * homepageSample = (int *)0x028DD00C;
-int * dj = (int *)0x060BB00C;
-int * recording = (int *)0x020BB00C;
-int * sample1 = (int *)0x044CB00C;
-int * sample2 = (int *)0x072BB00C;
-int * sample3 = (int *)0x093DB00C;
-int * sampleBack = (int *)0x034D2012; //******************
-
-// Milestone 3 flags
-static int home_flag = 1;
-static int dj_flag = 0;
-static int record_flag = 0;
-static int sample_sel_flag = 0;
-static int sample1_flag = 1;
-static int sample2_flag = 0;
-static int sample3_flag = 0;
-
-// access in the core possibly
-#define SONG_ADDR 0x01300000
-#define NUM_SAMPLES 1755840
-
-volatile int *song = (volatile int *)SONG_ADDR;
-
-int recording_song[1755840]; // Temporary buffer to store recorded audio samples
-
-
-extern u32 MMUTable;
 
 // Parameter definitions
 #define INTC_DEVICE_ID 		XPAR_PS7_SCUGIC_0_DEVICE_ID
@@ -74,11 +37,49 @@ extern u32 MMUTable;
 #define BTN_INT 			XGPIO_IR_CH1_MASK
 #define TMR_LOAD			0xF8000000
 
+// Communication between cores for VGA
+#define RIGHT_FLAG (*(volatile unsigned long *)(0xFFFF0008))
+#define CENTER_FLAG (*(volatile unsigned long *)(0xFFFF1012))
+#define DOWN_FLAG (*(volatile unsigned long *)(0xFFFF2016))
+#define UP_FLAG (*(volatile unsigned long *)(0xFFFF3032))
+#define SWITCHES_ON (*(volatile unsigned long *)(0xFFFF4032))
+
+// Menu pages - loading from mem
+int * homepageDJ = (int *)0x0F9F2012;
+int * homepageRecord = (int *)0x088D2012;
+int * homepageSample = (int *)0x028DD00C;
+// UPDATE DJ IMAGE TO REMOVE THE UP/DOWN/LEFT/RIGHT THING
+int * dj = (int *)0x060BB00C;
+int * recording = (int *)0x093DB00C;
+int * sample1 = (int *)0x044CB00C;
+int * sample2 = (int *)0x072BB00C;
+//int * sample3 = (int *)0x093DB00C; // can remove :)
+int * sampleBack = (int *)0x034D2012;
+
+// Flags for when each page is selected
+static int home_flag = 1;
+static int dj_flag = 0;
+static int record_flag = 0;
+static int sample_sel_flag = 0;
+static int sample1_flag = 1;
+static int sample2_flag = 0;
+static int sample3_flag = 0;
+
+// access in the core possibly
+#define SONG_ADDR 0x01300000
+#define NUM_SAMPLES 1755840
+volatile int *song = (volatile int *)SONG_ADDR;
+int recording_song[1755840]; // temp buffer to store recorded audio samples
+
+extern u32 MMUTable;
+
 // Define the sine wave parameters
 #define AMPLITUDE 200     // Amplitude of the sine wave
 #define FREQUENCY 2      // Frequency of the sine wave
 #define OFFSET 512       // Vertical offset for sine wave, so it doesn't go out of screen
 #define PI 3.14159265358979
+
+u32 delay_us = 476;
 
 XGpio LEDInst, BTNInst;
 XScuGic INTCInst;
@@ -87,27 +88,35 @@ static int led_data;
 static int btn_value;
 static int tmr_count;
 
-u32 delay_us = 476;
-
-
-int *frameBuffer = (int *)0x00900000;  // Example base address for framebuffer
+int *frameBuffer = (int *)0x00900000;  // base address for framebuffer
 int screenWidth = 1280;   // screen width
 int screenHeight = 1024;  // screen height
 
 //----------------------------------------------------
 // PROTOTYPE FUNCTIONS
 //----------------------------------------------------
-static void BTN_Intr_Handler(void *baseaddr_p);
+//static void BTN_Intr_Handler(void *baseaddr_p);
 static void TMR_Intr_Handler(void *baseaddr_p);
-static int InterruptSystemSetup(XScuGic *XScuGicInstancePtr);
-static int IntcInitFunction(u16 DeviceId, XTmrCtr *TmrInstancePtr, XGpio *GpioInstancePtr);
+//static int InterruptSystemSetup(XScuGic *XScuGicInstancePtr);
+//static int IntcInitFunction(u16 DeviceId, XTmrCtr *TmrInstancePtr, XGpio *GpioInstancePtr);
 
-//----------------------------------------------------
-// INTERRUPT HANDLER FUNCTIONS
-// - called by the timer, button interrupt, performs
-// - LED flashing
-//----------------------------------------------------
+void TMR_Intr_Handler(void *data)
+{
+	if (XTmrCtr_IsExpired(&TMRInst,0)){
+		// Once timer has expired 3 times, stop, increment counter
+		// reset timer and start running again
+		if(tmr_count == 3){
+			XTmrCtr_Stop(&TMRInst,0);
+			tmr_count = 0;
+			led_data++;
+			XGpio_DiscreteWrite(&LEDInst, 1, led_data);
+			XTmrCtr_Reset(&TMRInst,0);
+			XTmrCtr_Start(&TMRInst,0);
 
+		}
+		else tmr_count++;
+	}
+}
 
 void clearScreen(int *frameBuffer, int screenWidth, int screenHeight)
 {
@@ -117,7 +126,6 @@ void clearScreen(int *frameBuffer, int screenWidth, int screenHeight)
         }
     }
 }
-
 
 void draw_pixel(int *frameBuffer, int x, int y, int screenWidth, int color) {
     if (x >= 0 && x < screenWidth && y >= 0) {
@@ -135,6 +143,7 @@ void loadImage(int *frameBuffer, int screenWidth, int screenHeight, int *image)
     }
 }
 
+// sine wave themes
 typedef struct {
     int background;
     int wave;
@@ -179,8 +188,6 @@ void draw_sine_wave(int *frameBuffer, int screenWidth, int screenHeight) {
 		frame_counter++;  // Increment frame counter
 	}
 
-
-
     // Set background color
     int backgroundColor = colorThemes[current_theme_index].background;
    int waveColor = colorThemes[current_theme_index].wave;
@@ -189,7 +196,6 @@ void draw_sine_wave(int *frameBuffer, int screenWidth, int screenHeight) {
     for (int i = 0; i < screenWidth * screenHeight; i++) {
         frameBuffer[i] = backgroundColor;
     }
-
 
     //  Draw the sine wave
     for (int x = 0; x < screenWidth; x++) {
@@ -227,26 +233,36 @@ void draw_sine_wave(int *frameBuffer, int screenWidth, int screenHeight) {
 //    phase += 0.05;  // Move wave forward
 }
 
-
-
-
-
-void TMR_Intr_Handler(void *data)
-{
-	if (XTmrCtr_IsExpired(&TMRInst,0)){
-		// Once timer has expired 3 times, stop, increment counter
-		// reset timer and start running again
-		if(tmr_count == 3){
-			XTmrCtr_Stop(&TMRInst,0);
-			tmr_count = 0;
-			led_data++;
-			XGpio_DiscreteWrite(&LEDInst, 1, led_data);
-			XTmrCtr_Reset(&TMRInst,0);
-			XTmrCtr_Start(&TMRInst,0);
-
+void draw_background_progress(int screenWidth, int screenHeight){
+	int barWidth = screenWidth - 40;
+	int barHeight = 10;  // Thin progress bar
+	int barX = 20;  // Start X position
+	int barY = screenHeight - 30;  // Position near the bottom
+	// Draw the background of the progress bar (Gray)
+	for (int x = 0; x < barWidth; x++) {
+		for (int y = 0; y < barHeight; y++) {
+			draw_pixel(frameBuffer, barX + x, barY + y, screenWidth, 0x555555);
 		}
-		else tmr_count++;
 	}
+}
+
+void draw_progress_bar(int *frameBuffer, int screenWidth, int screenHeight, int i) {
+    int barWidth = screenWidth - 40;  // Leave some padding on the sides
+    int barHeight = 10;  // Thin progress bar
+    int barX = 20;  // Start X position
+    int barY = screenHeight - 30;  // Position near the bottom
+
+    // Calculate progress based on the current sample index
+    float progress = (float)i / NUM_SAMPLES;
+    int progressWidth = (int)(progress * barWidth);  // Width of the filled part
+
+
+    // Draw the filled progress (Blue)
+    for (int x = 0; x < progressWidth; x++) {
+        for (int y = 0; y < barHeight; y++) {
+            draw_pixel(frameBuffer, barX + x, barY + y, screenWidth, 0x0000FF);
+        }
+    }
 }
 
 void record_audio() {
@@ -331,10 +347,10 @@ void record_audio() {
 //    }
 //}
 
+
 //----------------------------------------------------
 // MAIN FUNCTION
 //----------------------------------------------------
-
 int main()
 {
     init_platform();
@@ -376,6 +392,8 @@ int main()
 						home_flag = 0;
 						dj_flag = 1;
 						loadImage(frameBuffer, screenWidth, screenHeight, dj);
+						Xil_DCacheFlush();
+						draw_background_progress(screenWidth, screenHeight-205);
 						CENTER_FLAG = 0;
 						Xil_DCacheFlush();
 					}
@@ -418,9 +436,8 @@ int main()
         		// Draw sine wave
         		//xil_printf("Drawing Sine Wave!\r\n");
         		draw_sine_wave(frameBuffer, screenWidth, screenHeight-215);
+        		draw_progress_bar(frameBuffer, screenWidth, screenHeight-205, COMM_VAL);
         		Xil_DCacheFlush();
-
-        		// Switches stuff for sound effects here
 
         		// To go to home page: if RIGHT_FLAG = 1, set home_flag = 1 and dj_flag = 0
         		if (CENTER_FLAG == 1 && SWITCHES_ON == 0) {
@@ -446,10 +463,7 @@ int main()
 						break;
 					}
         		}
-
         		record_audio();
-
-        		// maybe add another way to leave?
 
         	} else if (sample_sel_flag == 1) {
         		// 3 flags for each sample and same thing if center pressed go to that sample etc blah
@@ -461,7 +475,7 @@ int main()
 					loadImage(frameBuffer, screenWidth, screenHeight, sample2);
 				}
 				if (sampleCounter == 2) {
-					loadImage(frameBuffer, screenWidth, screenHeight, sample3);
+					//loadImage(frameBuffer, screenWidth, screenHeight, sample3);
 				}
 				if (sampleCounter == 3) {
 					loadImage(frameBuffer, screenWidth, screenHeight, sampleBack);
@@ -496,7 +510,6 @@ int main()
 						CENTER_FLAG = 0;
 					}
 
-
 					// Down & Up buttons
 					if (DOWN_FLAG == 1) {
 						sampleCounter++;
@@ -517,8 +530,6 @@ int main()
         		}
         	}
         }
-
-
 
     cleanup_platform();
     return 0;
