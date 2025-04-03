@@ -100,6 +100,15 @@ static int flanger_index = 0;
 static int flanger_lfo = 0;  // Triangle wave LFO
 static int lfo_direction = 1; // Controls up/down movement
 
+// LFSR
+#define LFSR_BASE_ADDR    0x43C00000
+#define LFSR_REG_OFFSET   0x00
+
+//Distoration
+#define EFFECT_BASE_ADDR 0x43C10000 // Effect register base address
+
+uint32_t random_number;
+
 // Stereo buffer
 static u32 audio_buffer[MAX_SAMPLES * 2];
 static int recorded_samples = 0;
@@ -123,6 +132,7 @@ static int flanger_flag = 0;
 static int skip_flag = 0;
 static int rewind_flag = 0;
 static int last_swt_value = 0;  // Remember the last switch state
+static int white_noise = 0;
 u32 delay_us = 476;
 u32 base = 476;
 
@@ -208,19 +218,25 @@ void BTN_Intr_Handler(void *InstancePtr) {
 		}
     } else if (swt_value == 3){ // AUDIO EFFECTS
 		if (btn_value == 8) {
-			xil_printf("ritee\n\r");
+			// right button
+			tremolo_flag = !tremolo_flag;
+			xil_printf("tomato: %d\n\r", tremolo_flag);
 		} else if (btn_value == 4) {
+			// left button
 			reverb_flag = !reverb_flag;
 			xil_printf("reberb: %d\n\r", reverb_flag);
 		} else if (btn_value == 16) {
+			// up button
 			distortion_flag = !distortion_flag;
 			xil_printf("disturbia: %d\n\r", distortion_flag);
 		} else if(btn_value == 2){
+			// down button
 			flanger_flag = !flanger_flag;
 			xil_printf("flangy: %d\n\r", flanger_flag);
 		} else if (btn_value == 1){
-			tremolo_flag = !tremolo_flag;
-			xil_printf("tomato: %d\n\r", tremolo_flag);
+			// center button
+			white_noise = !white_noise;
+			xil_printf("white: %d\n\r", white_noise);
 		}
     } else if((swt_value == 64)) { // REWIND FUNCTIONALITY
     	rewind_flag = 1;
@@ -229,6 +245,7 @@ void BTN_Intr_Handler(void *InstancePtr) {
     	delay_us = delay_us / 2;
     } else { // MENU SCREEN
     	if (btn_value == 8) {
+    		// To exit from recording mode
 			RIGHT_FLAG = 1;
 		} else if (btn_value == 4) {
 			// RECORD_FLAG = 1;
@@ -350,6 +367,27 @@ int apply_flanger(int sample) {
     return new_sample;
 }
 
+int hw_distortion(int sample) {
+	// IN HARDWARE !!!
+	sample = sample / 2;
+	Xil_Out32(EFFECT_BASE_ADDR, sample); // write the sample to the hardware block
+	return Xil_In32(EFFECT_BASE_ADDR);
+}
+
+void generate_white_noise(int *audio_sample, int noise_magnitude) {
+    // Read the pseudo-random number from the LFSR hardware
+	uint32_t  random_value = Xil_In32(LFSR_BASE_ADDR + LFSR_REG_OFFSET);  // Assuming LFSR_RANDOM_NUMBER_REG holds the LFSR output
+
+    // Scale the noise by the noise magnitude factor (range from 0 to 100 for example)
+    int noise = (random_value % noise_magnitude) - (noise_magnitude / 2);  // Centered around 0
+
+    // Add the generated noise to the audio sample
+    *audio_sample += (noise*5000);
+
+    // Optionally, you can visualize or display the impact of the noise in the system
+//    draw_audio_wave_with_noise(frameBuffer, screenWidth, screenHeight, *audio_sample);  // If needed, visualize the noise
+}
+
 // plays main sample and enables all effects to work!
 void play_audio() {
     xil_printf("Playing sample from memory...\r\n");
@@ -373,7 +411,8 @@ void play_audio() {
 			audio_sample = apply_reverb(audio_sample);
 		}
 		if (flanger_flag) {
-			audio_sample = apply_flanger(audio_sample);
+			//audio_sample = apply_flanger(audio_sample);
+			audio_sample = hw_distortion(audio_sample);
 		}
 		if (distortion_flag) {
 			audio_sample = apply_distortion(audio_sample);
@@ -400,6 +439,10 @@ void play_audio() {
 			audio_sample += hihat[j_hihat] * 100;
 			j_hihat++;
 		}
+
+        if(white_noise){
+		generate_white_noise(&audio_sample, 100);
+	   }
 
         AUDIO_SAMPLE_READY = 1;  // Flag to signal new data is ready
         // Write to the global thing for like dual core connection

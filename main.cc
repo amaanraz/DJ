@@ -19,6 +19,7 @@
 #include <time.h>
 
 // source C:/Users/tmm12/Desktop/sources/script/load_data.tcl
+// source C:/Users/Admin/Documents/ENSC452/sources/script/load_data.tcl
 
 #define COMM_VAL (*(volatile unsigned long *)(0x020BB00C))
 #define AUDIO_SAMPLE_CURRENT_MOMENT (*(volatile unsigned long *)(0xFFFF0001))
@@ -52,7 +53,7 @@ int * homepageSample = (int *)0x028DD00C;
 int * dj = (int *)0x060BB00C;
 int * recording = (int *)0x093DB00C;
 int * sample1 = (int *)0x044CB00C;
-int * sample2 = (int *)0x072BB00C;
+//int * sample2 = (int *)0x072BB00C;
 //int * sample3 = (int *)0x093DB00C; // can remove :)
 int * sampleBack = (int *)0x034D2012;
 
@@ -471,61 +472,13 @@ int main()
 				if (sampleCounter == 0) {
 					loadImage(frameBuffer, screenWidth, screenHeight, sample1);
 				}
-				if (sampleCounter == 1) {
-					loadImage(frameBuffer, screenWidth, screenHeight, sample2);
-				}
-				if (sampleCounter == 2) {
-					//loadImage(frameBuffer, screenWidth, screenHeight, sample3);
-				}
-				if (sampleCounter == 3) {
-					loadImage(frameBuffer, screenWidth, screenHeight, sampleBack);
-				}
         		// Selected sample
         		if(SWITCHES_ON == 0){
-					if (CENTER_FLAG == 1 && sampleCounter == 0) {
-						xil_printf("Sample %d selected.\r\n", sampleCounter+1);
-						sample1_flag = 1;
-						sample2_flag = 0;
-						sample3_flag = 0;
-						CENTER_FLAG = 0;
-						Xil_DCacheFlush();
-					} else if (CENTER_FLAG == 1 && sampleCounter == 1) {
-						xil_printf("Sample %d selected.\r\n", sampleCounter+1);
-						sample1_flag = 0;
-						sample2_flag = 1;
-						sample3_flag = 0;
-						CENTER_FLAG = 0;
-						Xil_DCacheFlush();
-					} else if (CENTER_FLAG == 1 && sampleCounter == 2) {
-						xil_printf("Sample %d selected.\r\n", sampleCounter+1);
-						sample1_flag = 0;
-						sample2_flag = 0;
-						sample3_flag = 1;
-						CENTER_FLAG = 0;
-						Xil_DCacheFlush();
-					} else if (CENTER_FLAG == 1 && sampleCounter == 3) {
+					if (CENTER_FLAG == 1) {
 						// return to home screen
 						sample_sel_flag = 0;
 						home_flag = 1;
 						CENTER_FLAG = 0;
-					}
-
-					// Down & Up buttons
-					if (DOWN_FLAG == 1) {
-						sampleCounter++;
-						xil_printf("Sample counter value: %d\r\n", sampleCounter);
-						if (sampleCounter > 3) {
-							sampleCounter = 0;
-						}
-						DOWN_FLAG=0;
-					}
-					if (UP_FLAG == 1) {
-						sampleCounter--;
-						xil_printf("Sample counter value: %d\r\n", sampleCounter);
-						if (sampleCounter < 0) {
-							sampleCounter = 3;
-						}
-						UP_FLAG=0;
 					}
         		}
         	}
