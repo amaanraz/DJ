@@ -17,6 +17,7 @@
 #include "math.h"
 #include <stdlib.h>
 #include <time.h>
+#include "led_controller.h"
 
 // source C:/Users/tmm12/Desktop/sources/script/load_data.tcl
 // source C:/Users/Admin/Documents/ENSC452/sources/script/load_data.tcl
@@ -37,6 +38,8 @@
 
 #define BTN_INT 			XGPIO_IR_CH1_MASK
 #define TMR_LOAD			0xF8000000
+
+#define LED_BASE XPAR_LED_CONTROLLER_0_S00_AXI_BASEADDR
 
 // Communication between cores for VGA
 #define RIGHT_FLAG (*(volatile unsigned long *)(0xFFFF0008))
@@ -68,9 +71,9 @@ static int sample3_flag = 0;
 
 // access in the core possibly
 #define SONG_ADDR 0x01300000
-#define NUM_SAMPLES 1755840
+#define NUM_SAMPLES 1726590//1755840
 volatile int *song = (volatile int *)SONG_ADDR;
-int recording_song[1755840]; // temp buffer to store recorded audio samples
+int recording_song[1726590];//1755840]; // temp buffer to store recorded audio samples
 
 extern u32 MMUTable;
 
@@ -277,7 +280,7 @@ void record_audio() {
 //		xil_printf("STARTING RECORDING...");
 		if (AUDIO_SAMPLE_READY) {  // Only read when data is ready
 			if (index < NUM_SAMPLES) {
-				recording_song[index] = AUDIO_SAMPLE_CURRENT_MOMENT / 50; // Normalize
+				recording_song[index] = AUDIO_SAMPLE_CURRENT_MOMENT / 150; // Normalize
 				index++;
 				finished_flag = 1;
 			}
@@ -372,6 +375,7 @@ int main()
         	// Xil_DCacheFlush();
         	// Start at home page with box on DJ
         	if (home_flag == 1) {
+        		LED_CONTROLLER_mWriteReg(LED_BASE, 0, 1);
         		xil_printf("On home page...\r\n");
         		if (counter == 0) {
     				loadImage(frameBuffer, screenWidth, screenHeight, homepageDJ);
@@ -433,6 +437,7 @@ int main()
 					}
     			}
         	} else if (dj_flag == 1) {
+        		LED_CONTROLLER_mWriteReg(LED_BASE, 0, 2);
         		//clearScreen(*frameBuffer, screenWidth, screenHeight);
         		// Draw sine wave
         		//xil_printf("Drawing Sine Wave!\r\n");
@@ -449,6 +454,7 @@ int main()
         		}
         	} else if (record_flag == 1) {
         		// NEED TO HAVE PAGES THAT CORRESPONDING TO SOUNDS FOR EACH SWITCH VAL
+        		LED_CONTROLLER_mWriteReg(LED_BASE, 0, 4);
         		xil_printf("In recording mode...\r\n");
         		loadImage(frameBuffer, screenWidth, screenHeight, recording);
         		RECORDING = 1;
@@ -468,6 +474,7 @@ int main()
 
         	} else if (sample_sel_flag == 1) {
         		// 3 flags for each sample and same thing if center pressed go to that sample etc blah
+        		LED_CONTROLLER_mWriteReg(LED_BASE, 0, 8);
         		xil_printf("In sample select mode...\r\n");
 				if (sampleCounter == 0) {
 					loadImage(frameBuffer, screenWidth, screenHeight, sample1);

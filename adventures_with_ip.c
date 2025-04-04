@@ -60,8 +60,8 @@ static int swt_value;
 // Song and sound effect mem addresses
 #define SONG_ADDR 0x01300000
 volatile int *song = (volatile int *)SONG_ADDR;
-int NUM_SAMPLES = 1755840;//835584;
-int * drum = (int *)0x019FF00C; // NEED TO FIND EMPTY ADDRESSES
+int NUM_SAMPLES = 1726590; //1755840;//835584;
+int * drum = (int *)0x072BB00C; // 0x017DB00C
 int NUM_SAMPLES_DRUM = 19055;
 int * snare = (int *)0x028A4010;
 int NUM_SAMPLES_SNARE = 32256;
@@ -99,6 +99,7 @@ static int flanger_buffer[FLANGER_DELAY];  // Delay buffer
 static int flanger_index = 0;
 static int flanger_lfo = 0;  // Triangle wave LFO
 static int lfo_direction = 1; // Controls up/down movement
+static int loop_flag = 0;
 
 // LFSR
 #define LFSR_BASE_ADDR    0x43C00000
@@ -167,6 +168,10 @@ void BTN_Intr_Handler(void *InstancePtr) {
     	if(swt_value != 64){
     		rewind_flag = 0;
     	}
+
+    	if(swt_value != 32){
+    		loop_flag = 0;
+    	}
     	last_swt_value = swt_value;
     }
     if(swt_value == 2){ // SOUND EFFECTS: snare, clap, kick, hihat, drum
@@ -216,34 +221,36 @@ void BTN_Intr_Handler(void *InstancePtr) {
 		} else if (btn_value == 1){
 			play_flag = 1;
 		}
-    } else if (swt_value == 3){ // AUDIO EFFECTS
+    } else if (swt_value == 4){ // AUDIO EFFECTS
 		if (btn_value == 8) {
 			// right button
 			tremolo_flag = !tremolo_flag;
-			xil_printf("tomato: %d\n\r", tremolo_flag);
+			xil_printf("tremolo: %d\n\r", tremolo_flag);
 		} else if (btn_value == 4) {
 			// left button
 			reverb_flag = !reverb_flag;
-			xil_printf("reberb: %d\n\r", reverb_flag);
+			xil_printf("reverb: %d\n\r", reverb_flag);
 		} else if (btn_value == 16) {
 			// up button
 			distortion_flag = !distortion_flag;
-			xil_printf("disturbia: %d\n\r", distortion_flag);
+			xil_printf("distortion: %d\n\r", distortion_flag);
 		} else if(btn_value == 2){
 			// down button
 			flanger_flag = !flanger_flag;
-			xil_printf("flangy: %d\n\r", flanger_flag);
+			xil_printf("flanger: %d\n\r", flanger_flag);
 		} else if (btn_value == 1){
 			// center button
 			white_noise = !white_noise;
-			xil_printf("white: %d\n\r", white_noise);
+			xil_printf("white noise: %d\n\r", white_noise);
 		}
     } else if((swt_value == 64)) { // REWIND FUNCTIONALITY
     	rewind_flag = 1;
     } else if (swt_value >= 128) { // SPEED UP FUNCTIONALITY
     	skip_flag = 1;
     	delay_us = delay_us / 2;
-    } else { // MENU SCREEN
+    } else if (swt_value == 32){
+    	loop_flag = !loop_flag;
+	} else { // MENU SCREEN
     	if (btn_value == 8) {
     		// To exit from recording mode
 			RIGHT_FLAG = 1;
@@ -401,7 +408,7 @@ void play_audio() {
             usleep(500);  // Prevent CPU overuse
         }
 
-        audio_sample = song[i]*50;
+        audio_sample = song[i]*150;
 
         // audio effects
         if (tremolo_flag) {
@@ -471,11 +478,15 @@ void play_audio() {
 
 		if (i >= NUM_SAMPLES) {
 			// To loop
- 			// xil_printf("Looping\n");
- 			// i = 0;  // Reset index to loop through samples
+			if(loop_flag){
+				 xil_printf("Looping\n");
+				 i = 0;  // Reset index to loop through samples
+
+			}else{
 
 			// To exit
-			playing = 0;
+				playing = 0;
+			}
 		}
 
 		// turn off flag once the effect has completed
@@ -541,43 +552,12 @@ void play_snare() {
 	snare_flag = 0;
 }
 
-void play_clap() {
-	xil_printf("Playing clap sample from memory...\r\n");
-	playing_clap = 1;
-
-	while (playing_clap) {
-		while (paused) {
-			// Stay in this loop until unpaused
-			usleep(500);  // Prevent CPU overuse
-		}
-
-		AUDIO_SAMPLE_CURRENT_MOMENT = clap[j];
-		Xil_Out32(I2S_DATA_TX_L_REG, clap[j]*100);  // Send left channel
-		Xil_Out32(I2S_DATA_TX_R_REG, clap[j]*100);  // Send right channel
-
-		j++; // Move to the next left sample for the next iteration
-
-		for(int j=0;j<delay_us;j++){
-			asm("NOP");
-		}
-
-		if (j >= NUM_SAMPLES_CLAP || j == 0) {
-			playing_clap = 0;
-		}
-	}
-	xil_printf("Clap effect complete.\r\n");
-	clap_flag = 0;
-}
-
 // main menu - loops through this and checks when sample or sounds are played
 void menu() {
     while (1) {
     	// to demonstrate sine wave functionality
     	if (snare_flag) {
 			play_snare();
-		}
-    	if (clap_flag) {
-			play_clap();
 		}
     	// play audio
         if (play_flag) {
