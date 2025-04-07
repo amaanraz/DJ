@@ -1,3 +1,4 @@
+/*---Project Headers---*/
 #include "xparameters.h"
 #include "xgpio.h"
 #include "xtmrctr.h"
@@ -10,10 +11,7 @@
 #include "xil_mmu.h"
 #include "platform.h"
 #include "xil_cache.h"
-#include "xil_printf.h"
-#include "xparameters.h"
 #include "xpseudo_asm.h"
-#include "xil_exception.h"
 #include "math.h"
 #include <stdlib.h>
 #include <time.h>
@@ -22,13 +20,15 @@
 // source C:/Users/tmm12/Desktop/sources/script/load_data.tcl
 // source C:/Users/Admin/Documents/ENSC452/sources/script/load_data.tcl
 
+/*--- Communication Between Cores ---*/
+// Shared flags between both cores
 #define COMM_VAL (*(volatile unsigned long *)(0x020BB00C))
 #define AUDIO_SAMPLE_CURRENT_MOMENT (*(volatile unsigned long *)(0xFFFF0001))
 #define AUDIO_SAMPLE_READY (*(volatile unsigned long *)(0xFFFF0028))
 #define RECORDING (*(volatile unsigned long *)(0xFFFF0010))
 #define PLAYING_R (*(volatile unsigned long *)(0xFFFF0014))
 
-// Parameter definitions
+/*--- Interrupt & Device Parameter Definitions ---*/
 #define INTC_DEVICE_ID 		XPAR_PS7_SCUGIC_0_DEVICE_ID
 #define TMR_DEVICE_ID		XPAR_TMRCTR_0_DEVICE_ID
 #define BTNS_DEVICE_ID		XPAR_AXI_GPIO_0_DEVICE_ID
@@ -36,31 +36,28 @@
 #define INTC_GPIO_INTERRUPT_ID XPAR_FABRIC_AXI_GPIO_1_IP2INTC_IRPT_INTR
 #define INTC_TMR_INTERRUPT_ID XPAR_FABRIC_AXI_TIMER_0_INTERRUPT_INTR
 
+/*--- Button and Switch Constant Vals + LEDs ---*/
 #define BTN_INT 			XGPIO_IR_CH1_MASK
 #define TMR_LOAD			0xF8000000
-
 #define LED_BASE XPAR_LED_CONTROLLER_0_S00_AXI_BASEADDR
 
-// Communication between cores for VGA
+/*--- Flags for VGA Events Between Cores ---*/
 #define RIGHT_FLAG (*(volatile unsigned long *)(0xFFFF0008))
 #define CENTER_FLAG (*(volatile unsigned long *)(0xFFFF1012))
 #define DOWN_FLAG (*(volatile unsigned long *)(0xFFFF2016))
 #define UP_FLAG (*(volatile unsigned long *)(0xFFFF3032))
 #define SWITCHES_ON (*(volatile unsigned long *)(0xFFFF4032))
 
-// Menu pages - loading from mem
+/*--- Menu Page Images ---*/
 int * homepageDJ = (int *)0x0F9F2012;
 int * homepageRecord = (int *)0x088D2012;
 int * homepageSample = (int *)0x028DD00C;
-// UPDATE DJ IMAGE TO REMOVE THE UP/DOWN/LEFT/RIGHT THING
 int * dj = (int *)0x060BB00C;
 int * recording = (int *)0x093DB00C;
 int * sample1 = (int *)0x044CB00C;
-//int * sample2 = (int *)0x072BB00C;
-//int * sample3 = (int *)0x093DB00C; // can remove :)
 int * sampleBack = (int *)0x034D2012;
 
-// Flags for when each page is selected
+/*--- Image Flags - Start on Homepage ---*/
 static int home_flag = 1;
 static int dj_flag = 0;
 static int record_flag = 0;
@@ -69,41 +66,42 @@ static int sample1_flag = 1;
 static int sample2_flag = 0;
 static int sample3_flag = 0;
 
-// access in the core possibly
+/* --- Audio Samples & Memory Locations --- */
+// Main song sample
 #define SONG_ADDR 0x01300000
 #define NUM_SAMPLES 1726590//1755840
 volatile int *song = (volatile int *)SONG_ADDR;
-int recording_song[1726590];//1755840]; // temp buffer to store recorded audio samples
+int recording_song[1726590];
 
 extern u32 MMUTable;
 
-// Define the sine wave parameters
-#define AMPLITUDE 200     // Amplitude of the sine wave
-#define FREQUENCY 2      // Frequency of the sine wave
-#define OFFSET 512       // Vertical offset for sine wave, so it doesn't go out of screen
+/*--- Sine Wave Parameters ---*/
+#define AMPLITUDE 200        // Amplitude
+#define FREQUENCY 2          // Frequency
+#define OFFSET 512           // Vertical offset - so wave doesn't go out of screen
 #define PI 3.14159265358979
 
+// Base audio playback delay
 u32 delay_us = 476;
 
+/*--- Xilinx Peripheral Instances ---*/
 XGpio LEDInst, BTNInst;
 XScuGic INTCInst;
 XTmrCtr TMRInst;
+
 static int led_data;
 static int btn_value;
 static int tmr_count;
 
-int *frameBuffer = (int *)0x00900000;  // base address for framebuffer
-int screenWidth = 1280;   // screen width
-int screenHeight = 1024;  // screen height
+/*--- FrameBuffer Data and Screen Size ---*/
+int *frameBuffer = (int *)0x00900000;  // Base address for framebuffer
+int screenWidth = 1280;   			   // screen width
+int screenHeight = 1024; 			   // screen height
 
-//----------------------------------------------------
-// PROTOTYPE FUNCTIONS
-//----------------------------------------------------
-//static void BTN_Intr_Handler(void *baseaddr_p);
+/*--- FUNCTION PROTOTYPES ---*/
 static void TMR_Intr_Handler(void *baseaddr_p);
-//static int InterruptSystemSetup(XScuGic *XScuGicInstancePtr);
-//static int IntcInitFunction(u16 DeviceId, XTmrCtr *TmrInstancePtr, XGpio *GpioInstancePtr);
 
+/*--- INTERRUPT HANDLER FUNCTIONS (Timer) ---*/
 void TMR_Intr_Handler(void *data)
 {
 	if (XTmrCtr_IsExpired(&TMRInst,0)){
@@ -122,6 +120,7 @@ void TMR_Intr_Handler(void *data)
 	}
 }
 
+/*--- Screen Draw/Clear Functions ---*/
 void clearScreen(int *frameBuffer, int screenWidth, int screenHeight)
 {
     for (int y = 0; y < screenHeight; y++) {
@@ -131,12 +130,15 @@ void clearScreen(int *frameBuffer, int screenWidth, int screenHeight)
     }
 }
 
+// Draw pixel at desired location in screen
 void draw_pixel(int *frameBuffer, int x, int y, int screenWidth, int color) {
     if (x >= 0 && x < screenWidth && y >= 0) {
         frameBuffer[y * screenWidth + x] = color;
     }
 }
 
+
+// Load specified images from mem
 void loadImage(int *frameBuffer, int screenWidth, int screenHeight, int *image)
 {
 	//xil_printf("in the load Image function\n");
@@ -147,7 +149,7 @@ void loadImage(int *frameBuffer, int screenWidth, int screenHeight, int *image)
     }
 }
 
-// sine wave themes
+// Sine wave themes
 typedef struct {
     int background;
     int wave;
@@ -172,6 +174,7 @@ static int current_theme_index = 0;
 static int frame_counter = 0;
 static int color_switch_interval = 30;
 
+// Function to draw sine wave based on samples
 void draw_sine_wave(int *frameBuffer, int screenWidth, int screenHeight) {
     static float phase = 0.0;
 
@@ -233,10 +236,9 @@ void draw_sine_wave(int *frameBuffer, int screenWidth, int screenHeight) {
             }
         }
     }
-
-//    phase += 0.05;  // Move wave forward
 }
 
+/*--- Progress Bar Functions ---*/
 void draw_background_progress(int screenWidth, int screenHeight){
 	int barWidth = screenWidth - 40;
 	int barHeight = 10;  // Thin progress bar
@@ -250,6 +252,7 @@ void draw_background_progress(int screenWidth, int screenHeight){
 	}
 }
 
+// Draws progress bar based on how much of sample is complete
 void draw_progress_bar(int *frameBuffer, int screenWidth, int screenHeight, int i) {
     int barWidth = screenWidth - 40;  // Leave some padding on the sides
     int barHeight = 10;  // Thin progress bar
@@ -270,14 +273,14 @@ void draw_progress_bar(int *frameBuffer, int screenWidth, int screenHeight, int 
 }
 
 void record_audio() {
-	// start recording when RECORDING =1 and the play button has been pressed
+	// Start recording when RECORDING =1 and the play button has been pressed
 	// Save audio running to another buffer.
 	// After loop exits, either by playback ending, or user leaving early
 	// Save changes by copying contents of new buffer to song buffer to play
 	bool finished_flag = 0;
 	unsigned int index = 0;
 	while(RECORDING == 1 && PLAYING_R == 1){
-//		xil_printf("STARTING RECORDING...");
+	//	xil_printf("STARTING RECORDING...");
 		if (AUDIO_SAMPLE_READY) {  // Only read when data is ready
 			if (index < NUM_SAMPLES) {
 				recording_song[index] = AUDIO_SAMPLE_CURRENT_MOMENT / 150; // Normalize
@@ -287,7 +290,7 @@ void record_audio() {
 		}
 
 	}
-	// copying contents of new buffer to song buffer to play
+	// Copying contents of new buffer to song buffer to play
 	if(finished_flag){
 		xil_printf("SAVING CHANGES... ");
 		for(int i = 0; i < NUM_SAMPLES; i++) {
@@ -300,61 +303,7 @@ void record_audio() {
 	}
 }
 
-//REMOVE MAYBE IF NOT WORK
-//#include <iostream>
-//
-//// Define a font array for 128 characters (ASCII range 0-127)
-//static const unsigned char font[128][7] = {
-//    {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, // Null character (ASCII 0)
-//    {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, // Other characters
-//    // Example for 'A' (ASCII 65)
-//    {0x1E, 0x05, 0x05, 0x1E, 0x00, 0x00, 0x00},  // 'A' (65)
-//    {0x1F, 0x15, 0x15, 0x0A, 0x00, 0x00, 0x00},  // 'B' (66)
-//    {0x0E, 0x11, 0x11, 0x0A, 0x00, 0x00, 0x00},  // 'C' (67)
-//    // Add more characters here
-//    // For example, for 'Z' (ASCII 90)
-//    {0x1F, 0x01, 0x01, 0x1F, 0x00, 0x00, 0x00},  // 'Z' (90)
-//    // Complete the array for all characters as needed...
-//};
-//
-//// Function to draw a simple character (using a pixel grid representation)
-//void draw_character(int *frameBuffer, int x, int y, int screenWidth, char character, int color) {
-//    // Ensure the character is within the ASCII range (0-127)
-//    if (character < 0 || character > 127) return;
-//
-//    // Loop through the 5x7 font data for each character
-//    for (int row = 0; row < 7; row++) {
-//        for (int col = 0; col < 5; col++) {
-//            if (font[(int)character][row] & (1 << (4 - col))) {
-//                draw_pixel(frameBuffer, x + col, y + row, screenWidth, color);
-//            }
-//        }
-//    }
-//}
-//
-//void draw_text(int *frameBuffer, int screenWidth, int screenHeight, const char *text, int color) {
-//    int char_width = 8;   // Width of each character
-//    int char_height = 12; // Height of each character
-//    int padding = 10;     // Padding from the right edge
-//
-//    // Determine the starting x position for right-aligned text
-//    int text_length = 0;
-//    while (text[text_length] != '\0') {
-//        text_length++;
-//    }
-//    int x = screenWidth - (text_length * char_width) - padding;
-//    int y = screenHeight - char_height - padding; // Place near bottom-right
-//
-//    // Loop through each character in the text
-//    for (int i = 0; i < text_length; i++) {
-//        draw_character(frameBuffer, x + (i * char_width), y, screenWidth, text[i], color);
-//    }
-//}
-
-
-//----------------------------------------------------
-// MAIN FUNCTION
-//----------------------------------------------------
+/*--- MAIN FUNCTION ---*/
 int main()
 {
     init_platform();
@@ -368,7 +317,7 @@ int main()
         for(int i=0;i<100000000;i++){
         	asm("NOP");
         }
-        // LATER: make this an array with 0,1,2 and just change array index if down/up arrows r pressed
+
         int counter = 0;
         int sampleCounter = 0;
         while(1){
@@ -382,10 +331,6 @@ int main()
     			}
     			if (counter == 1) {
     				loadImage(frameBuffer, screenWidth, screenHeight, homepageRecord);
-//    				draw_text(frameBuffer, screenWidth/2, screenHeight/2, "AAA", 0xFFFFFF);
-//    				draw_text(frameBuffer, screenWidth/2, screenHeight/2, "AAA", 0xFFFFFF);
-
-
     			}
     			if (counter == 2) {
     				loadImage(frameBuffer, screenWidth, screenHeight, homepageSample);
@@ -438,9 +383,8 @@ int main()
     			}
         	} else if (dj_flag == 1) {
         		LED_CONTROLLER_mWriteReg(LED_BASE, 0, 2);
-        		//clearScreen(*frameBuffer, screenWidth, screenHeight);
+
         		// Draw sine wave
-        		//xil_printf("Drawing Sine Wave!\r\n");
         		draw_sine_wave(frameBuffer, screenWidth, screenHeight-215);
         		draw_progress_bar(frameBuffer, screenWidth, screenHeight-205, COMM_VAL);
         		Xil_DCacheFlush();
@@ -453,7 +397,6 @@ int main()
         			Xil_DCacheFlush();
         		}
         	} else if (record_flag == 1) {
-        		// NEED TO HAVE PAGES THAT CORRESPONDING TO SOUNDS FOR EACH SWITCH VAL
         		LED_CONTROLLER_mWriteReg(LED_BASE, 0, 4);
         		xil_printf("In recording mode...\r\n");
         		loadImage(frameBuffer, screenWidth, screenHeight, recording);
